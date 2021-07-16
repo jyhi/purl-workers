@@ -1,0 +1,26 @@
+# Cloudflare Workers CLI (Wrangler) Configuration
+#
+# See https://developers.cloudflare.com/workers/cli-wrangler/configuration
+# for available options and their meanings.
+#
+# SPDX-FileCopyrightText: 2021 Junde Yhi <junde@yhi.moe>
+# SPDX-License-Identifier: CC0-1.0
+
+type = "javascript"
+name = "purl-workers"
+
+# Fill the below details for use
+account_id = ""
+zone_id = ""
+workers_dev = true
+routes = []
+
+[[kv_namespaces]]
+binding = "KV_PURL" # Change the source code too if changing this
+id = ""
+preview_id = ""
+
+# Wrangler building configurations
+[build]
+command = "npm install && npx tsc"
+upload = { format = "service-worker" }
