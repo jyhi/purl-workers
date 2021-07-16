@@ -1,4 +1,4 @@
-# PURL Server on Cloudflare Workers
+# PURL Service Running on Cloudflare Workers
 
 A (very simple) [Persistent URL][purl] service running on [Cloudflare Workers][cfwkrs]. Can also be used as a URL shortening service.
 
