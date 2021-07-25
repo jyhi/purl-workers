@@ -28,16 +28,7 @@ type InfoObject = {
 };
 
 const handler = async (request: Request): Promise<Response> => {
-  let urlIn: URL;
-  try {
-    urlIn = new URL(request.url);
-  } catch {
-    return new Response(null, {
-      status: 400,
-      statusText: "Bad Request",
-    });
-  }
-
+  const urlIn = new URL(request.url);
   const value: string | null = await KV_PURL.get(urlIn.pathname);
 
   if (!value) {
