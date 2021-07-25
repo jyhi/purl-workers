@@ -18,40 +18,78 @@
 
 declare const KV_PURL: KVNamespace;
 
-type InfoObject = {
+type Entry = {
   status?: number;
   statusText?: string;
   location?: string;
-  content?: string;
+};
+
+type Metadata = {
   contentType?: string;
-  contentKey?: string;
 };
 
 const handler = async (request: Request): Promise<Response> => {
   const urlIn = new URL(request.url);
-  const value: string | null = await KV_PURL.get(urlIn.pathname);
+  const value = await KV_PURL.getWithMetadata(urlIn.pathname, "arrayBuffer");
 
-  if (!value) {
+  const entry = value.value;
+  const metadata: Metadata | null = value.metadata as Metadata;
+
+  if (!entry) {
     return new Response(null, {
       status: 404,
       statusText: "Not Found",
     });
   }
 
-  let obj: InfoObject;
-  try {
-    obj = JSON.parse(value);
-  } catch {
-    return new Response(value, {
+  if (metadata) {
+    return new Response(entry, {
       status: 200,
       statusText: "OK",
       headers: new Headers({
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": metadata.contentType ?? "application/octet-stream",
       }),
     });
   }
 
-  if (!obj.status) {
+  const decoder = new TextDecoder();
+  const entryText = decoder.decode(entry);
+
+  let entryObject: Entry | null;
+  try {
+    entryObject = JSON.parse(entryText);
+  } catch {
+    entryObject = null;
+  }
+
+  if (!entryObject) {
+    let urlOut: URL | null;
+    try {
+      urlOut = new URL(entryText);
+    } catch {
+      urlOut = null;
+    }
+
+    if (urlOut) {
+      return new Response(null, {
+        status: 302,
+        statusText: "Found",
+        headers: new Headers({
+          "Location": urlOut.toString()
+        })
+      });
+    } else {
+      return new Response(entry, {
+        status: 200,
+        statusText: "OK",
+        headers: new Headers({
+          "Content-Type": "application/octet-stream",
+        }),
+      });
+    }
+  }
+
+  if (!entryObject.status) {
     return new Response(null, {
       status: 204,
       statusText: "No Content",
@@ -59,23 +97,14 @@ const handler = async (request: Request): Promise<Response> => {
   }
 
   const headers = new Headers();
-  if (obj.location) {
-    headers.append("Location", obj.location);
-  }
-  if (obj.contentType) {
-    headers.append("Content-Type", obj.contentType);
+
+  if (entryObject.location) {
+    headers.append("Location", entryObject.location);
   }
 
-  let content: ArrayBuffer | string | null | undefined = null;
-  if (obj.contentKey) {
-    content = await KV_PURL.get(obj.contentKey, "arrayBuffer");
-  } else {
-    content = obj.content;
-  }
-
-  return new Response(content, {
-    status: obj.status,
-    statusText: obj.statusText,
+  return new Response(null, {
+    status: entryObject.status,
+    statusText: entryObject.statusText,
     headers: headers,
   });
 };
