@@ -75,8 +75,8 @@ const handler = async (request: Request): Promise<Response> => {
         status: 302,
         statusText: "Found",
         headers: new Headers({
-          "Location": urlOut.toString()
-        })
+          Location: urlOut.toString(),
+        }),
       });
     } else {
       return new Response(entry, {
