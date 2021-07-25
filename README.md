@@ -1,12 +1,12 @@
 # PURL Service Running on Cloudflare Workers
 
-A (very simple) [Persistent URL][purl] service running on [Cloudflare Workers][cfwkrs]. Can also be used as a URL shortening service.
+A [Persistent URL][purl] service running on [Cloudflare Workers][cfwkrs]. Can also be used as a URL shortening service.
 
 Features include:
 
 - Serverless
 - Customizable HTTP redirection
-- Direct content return support
+- Direct content return
 
 ## Deploy
 
@@ -21,46 +21,63 @@ Assuming [Cloudflare][cf] experience:
 
 At present there's no entry addition support; one needs to manually add entries via either [Wrangler], the Web interface, or the API.
 
-Upon an incoming HTTP request, the path component (with `/` prepended) will be used as a key to find an entry in KV. The value should be a JSON string; if it isn't then it's returned directly as `text/plain`.
+Upon an incoming HTTP request, the path (with `/` prepended) will be used as a key to find an entry in KV. The value can be in the following forms:
 
-To specify a HTTP temporary redirect (which is the intended use case), set `status` and `location`:
+- A JSON object of type `Entry` recording a HTTP response. See [The Entry Object](#the-entry-object) for details.
+- A URL. This will be returned in a `Location` header with HTTP 302 Found.
+- Any arbitrary content. This will be returned with HTTP 200 OK and `Content-Type: application/octet-stream`. Associate metadata to this entry to change the content type; see [The Metadata Object](#the-metadata-object) for details.
+
+### Examples
+
+- To create a (temporal) redirection from `/foo` to `https://www.youtube.com/watch?v=dQw4w9WgXcQ` using [Wrangler]:
+
+```shell
+wrangler kv:key put --binding KV_PURL '/foo' 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+```
+
+- To create a permanent redirection instead:
+
+```shell
+wrangler kv:key put --binding KV_PURL '/foo' '{"status": 308, "location": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
+```
+
+- To place a PDF file at `/test.pdf`, with the correct content type be associated:
+
+```shell
+wrangler kv:key put --binding KV_PURL --path --metadata '{"contentType": "application/pdf"}' '/test.pdf' path/to/pdf/file
+```
+
+## The Entry Object
+
+The entry object has the following shape:
 
 ```json
 {
   "status": 307,
-  "location": "http://example.com/"
+  "statusText": "Temporary Redirect",
+  "location": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 }
 ```
 
-This project also supports direct return by specifying a non-redirect HTTP `status`, `contentType`, and `content`. Note that this is only applicable to strings.
+Each field is optional. The above example already shows how to temporarily redirect a request using HTTP 307 Temporary Redirect (instead of 302 Found).
+
+An object without `status` will create a HTTP 204 No Content response.
+
+## The Metadata Object
+
+Metadata is a functionality offered by Workers KV, allowing an arbitrary JSON object be associated with a KV entry. The metadata object has the following shape:
 
 ```json
 {
-  "status": 200,
-  "contentType": "application/json",
-  "content": "{\"example\": true}"
+  "contentType": "application/json"
 }
 ```
 
-To directly return binary data, specify `contentKey` instead. This will initiate a second search in the KV database with the specified value as the key. The value retrieved is then sent as-is.
-
-```json
-{
-  "status": 200,
-  "contentType": "image/jpg",
-  "contentKey": "example.jpg"
-}
-```
-
-By not even specifying a `status`, a `HTTP 204 No Content` will be returned.
-
-```json
-{}
-```
+Although `contentType` is optional (in which case `octet-stream` will be returned), it's not recommended to do this. Use [Wrangler] to associate metadata with a KV entry; there isn't such support on the Web interface yet.
 
 ## Build
 
-[Wrangler] automatically builds the project already; the compiled JavaScript file is located under `dist/`. To manually build this project:
+[Wrangler] can automatically build the project. To manually build this project:
 
 ```shell
 # Install dependencies
@@ -69,6 +86,8 @@ npm install
 # Invoke TypeScript compiler
 npx tsc
 ```
+
+The compiled JavaScript file is located under `dist/`.
 
 ## License
 
