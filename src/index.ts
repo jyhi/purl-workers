@@ -1,4 +1,4 @@
-// A (very simple) Persistent URL (PURL) service running on Cloudflare Workers
+// A Persistent URL (PURL) service running on Cloudflare Workers
 // Copyright (C) 2021 Junde Yhi <junde@yhi.moe>
 //
 // This program is free software: you can redistribute it and/or modify
