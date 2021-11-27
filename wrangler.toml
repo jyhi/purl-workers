@@ -22,5 +22,5 @@ preview_id = ""
 
 # Wrangler building configurations
 [build]
-command = "npm install && npx tsc"
+command = "npm install && npm run build"
 upload = { format = "service-worker" }
