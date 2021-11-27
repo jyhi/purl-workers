@@ -2,7 +2,7 @@
   "private": true,
   "name": "purl-workers",
   "version": "0.2.0",
-  "description": "A (very simple) Persistent URL (PURL) service running on Cloudflare Workers",
+  "description": "A Persistent URL (PURL) service running on Cloudflare Workers",
   "license": "AGPL-3.0-or-later",
   "author": {
     "name": "Junde Yhi",
