@@ -16,7 +16,7 @@ workers_dev = true
 routes = []
 
 [[kv_namespaces]]
-binding = "KV_PURL" # Change the source code too if changing this
+binding = "kv" # Change the source code too if changing this
 id = ""
 preview_id = ""
 
