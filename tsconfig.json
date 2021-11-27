@@ -5,7 +5,7 @@
     "strict": true,
     "lib": ["ESNext"],
     "types": ["@cloudflare/workers-types"],
-    "outDir": "dist",
+    "outDir": "dist"
   },
   "include": ["src"]
 }
