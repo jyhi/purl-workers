@@ -1,0 +1,7 @@
+{
+  "entryPoints": [
+    "./src/handler.ts",
+    "./src/types.ts"
+  ],
+  "includeVersion": true
+}
