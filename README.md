@@ -1,12 +1,6 @@
 # PURL Service Running on Cloudflare Workers
 
-A [Persistent URL][purl] service running on [Cloudflare Workers][cfwkrs]. Can also be used as a URL shortening service.
-
-Features include:
-
-- Serverless
-- Customizable HTTP redirection
-- Direct content return
+A [Persistent URL][purl] (or a URL shortening) service running on [Cloudflare Workers][cfwkrs], plus a few bells and whistles.
 
 ## Deploy
 
@@ -21,70 +15,70 @@ Assuming [Cloudflare][cf] experience:
 
 At present there's no direct support for updating the database; one needs to manually edit entries via either [Wrangler], the Web interface, or the API.
 
-Upon an incoming HTTP request, the path (with `/` prepended) will be used as a key to find an entry in the associated Workers KV. The value can be:
+Upon an incoming HTTP request, the URL path will be used as a key to find an entry in the associated Workers KV. The value can be:
 
 - An [entry object](#the-entry-object).
-- An URL; this will be returned in a `Location` header with HTTP 302 Found.
-- Any arbitrary content; this will be returned with HTTP 200 OK and `Content-Type: application/octet-stream`. Associate metadata to this entry to change the status code and content type; see [The Metadata Object](#the-metadata-object) for details.
+- An URL; this will be returned in a `Location` header with HTTP `302 Found`.
+- Any arbitrary content; this will be returned with configurations from the associated [The Metadata Object](#the-metadata-object).
 
 ### Examples
 
 Using [Wrangler]:
 
-- To create a (temporal) redirection from `/foo` to `https://www.youtube.com/watch?v=dQw4w9WgXcQ`:
+- To create a (temporal) redirection from `/foo`:
 
 ```shell
-wrangler kv:key put --binding KV_PURL '/foo' 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+wrangler kv:key put --binding kv '/foo' 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
 ```
 
 - To create a permanent redirection instead:
 
 ```shell
-wrangler kv:key put --binding KV_PURL '/foo' '{"status": 308, "location": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
+wrangler kv:key put --binding kv \
+  '/foo' '{"status": 308, "location": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
 ```
 
-- To place a PDF file at `/test.pdf`, with the correct content type be associated:
+- To place a PDF file at `/test.pdf`, with the correct content type:
 
 ```shell
-wrangler kv:key put --binding KV_PURL --path --metadata '{"contentType": "application/pdf"}' '/test.pdf' path/to/pdf/file
+wrangler kv:key put --binding kv \
+  --metadata '{"contentType": "application/pdf"}' \
+  --path '/test.pdf' path/to/pdf/file
 ```
 
 ## The Entry Object
 
-The entry object has the following shape:
+The entry object is represented in JSON, with the following shape:
 
 ```json
 {
-  "is": "<path>",
-  "status": 123,
+  "is": "<key>",
+  "status": 204,
   "statusText": "<reason phrase>",
-  "location": "uri:redirect:target",
-  "contentType": "mime/type",
+  "location": "http://www.example.com",
+  "contentType": "application/x-example",
   "contentBase64Decode": false,
   "content": "Lorem ipsum dolor sit amet..."
 }
 ```
 
-Every field is optional, but some have higher precedence and thus may be regarded as exclusive:
-
-- `is` creates an alias; see [Alias](#alias)
-- `status` creates a response; see [Redirection](#redirection)
-
-When multiple of the above are simultaneously specified, purl-workers processes from the start of the above list (that is, `is` has the highest precedence). Note that [The Metadata Object](#the-metadata-object) always creates a direct return, regardless of what is specified in the value.
+Every field is optional. If `"is"` is present, it will be used to resolve [alias](#alias) regardless of other fields. Note that if a [metadata object](#the-metadata-object) is associated to the value, then it always takes precedence, creating a direct return, regardless of what is specified in the value.
 
 ### Alias
 
-`is` creates an alias from the current key to a specified key. For example, the following object creates an alias to `/foo`:
+`"is"` creates an alias from the current key to a specified key. For example, the following object creates an alias to `/foo`:
 
 ```json
-{"is": "/foo"}
+{
+  "is": "/foo"
+}
 ```
 
-If it is the value of key `/bar`, then `/foo` will be read upon a request to `/bar`. If the alias target is also an alias, then purl-workers will continue resolving it recursively, until a non-alias object is found. It is therefore very easy to create an endless loop; pay attention not to creating one!
+Chained aliases are resolved recursively, until an entry object without `"is"` or a non-entry-object is found. It is therefore very easy to create an endless loop; pay attention not to create one!
 
 ### Redirection
 
-Specify a 3xx (redirection) HTTP status code with `status` to create a redirection. For example, the following object creates a temporary redirection using HTTP 307:
+Specify a 3xx (redirection) HTTP status code with `"status"` to create a redirection. For example, the following object creates a temporary redirection using `HTTP 307`:
 
 ```json
 {
@@ -94,13 +88,13 @@ Specify a 3xx (redirection) HTTP status code with `status` to create a redirecti
 }
 ```
 
-`statusText` and `location` are optional. However, returning a 3xx (redirection) status code without a `location` can confuse the client.
+`"statusText"` and `"location"` are optional. However, returning a 3xx (redirection) status code without a `"location"` can confuse the client.
 
 As a shortcut, for a simple `302 Found`, one can simply put the location (target) URL in the value; see [Examples](#examples).
 
 ### Direct Return
 
-Use `content` to insert a payload into the response. Meanwhile, use a non-3xx (non-redirection) `status` to make the payload meaningful. As `content` can only be a text string, for binary payloads, a Base64-encoded string can be used along with `contentBase64Decode` set to `true`, telling purl-workers to first decode it. For example, the following object creates a HTTP 402 Payment Required response with a Base64-encoded plain-text payload:
+Use `"content"` to insert a payload into the response. Meanwhile, use a non-3xx (non-redirection) `"status"` to make the payload meaningful. As `"content"` can only be a text string, for binary payloads, a Base64-encoded string can be used along with `"contentBase64Decode"` set to `true`, telling purl-workers to first decode it. For example, the following object creates a HTTP 402 Payment Required response with a Base64-encoded plain-text payload:
 
 ```json
 {
@@ -114,15 +108,28 @@ Use `content` to insert a payload into the response. Meanwhile, use a non-3xx (n
 
 As a shortcut, for a simple `200 OK` with an arbitrary payload, one can simply put the payload in binary into a value and make use of the metadata functionality of Workers KV; see [The Metadata Object](#the-metadata-object) for what can be put into the metadata object.
 
-### Empty
+### No Content
 
-An object without either a `status` or an `is` will create a HTTP 204 No Content response:
+Instead of setting up a `HTTP 204` entry object:
+
+```json
+{
+  "status": 204,
+  "statusText": "No Content"
+}
+```
+
+An empty object can also create a `HTTP 204 No Content` response:
 
 ```json
 {}
 ```
 
-A completely empty value also creates a HTTP 204 No Content response.
+A completely empty value also creates a `HTTP 204 No Content` response:
+
+```
+
+```
 
 ## The Metadata Object
 
@@ -132,7 +139,7 @@ Metadata is a functionality offered by Workers KV, allowing an arbitrary JSON ob
 {
   "status": 123,
   "statusText": "<reason phrase>",
-  "contentType": "mime/type"
+  "contentType": "application/x-example"
 }
 ```
 
@@ -146,23 +153,33 @@ Every field is optional. An empty metadata object (`{}`) will result in the foll
 }
 ```
 
-Of course, the metadata object itself is also optional. If a value _is not_ associated with a metadata object, purl-workers try parsing the value as an [entry object](#the-entry-object) or the various shortcuts. If a metadata object _is_ associated with a value, a direct return will always be created, regardless of what is specified inside.
+Most often, only the `"contentType"` needs to be specified:
+
+```json
+{
+  "contentType": "image/jpeg"
+}
+```
+
+The association of metadata object is also optional. If a value _is not_ associated with a metadata object, purl-workers try parsing the value first. If a metadata object _is_ associated with a value, a direct return will always be created, regardless of what is specified inside.
 
 See [Examples](#examples) for how to upload a file with a metadata object associated.
 
 ## Build
 
-[Wrangler] can automatically build the project. To manually build this project:
+[Wrangler] can automatically build the project:
 
 ```shell
-# Install dependencies
-npm install
-
-# Invoke TypeScript compiler
-npx tsc
+wrangler build
 ```
 
-The compiled JavaScript file will be located under `dist/`.
+To manually build this project:
+
+```shell
+npm install && npm run build
+```
+
+The compiled and bundled JavaScript file will be at `dist/bundle.js`.
 
 ## License
 
