@@ -114,7 +114,7 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
-  if (entry === {}) {
+  if (Object.keys(entry).length === 0) {
     return new Response(null, {
       status: 204,
       statusText: "No Content",
