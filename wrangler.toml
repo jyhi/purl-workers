@@ -8,6 +8,7 @@
 
 type = "javascript"
 name = "purl-workers"
+compatibility_date = "2021-11-28"
 
 # Fill the below details for use
 account_id = ""
