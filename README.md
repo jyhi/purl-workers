@@ -19,7 +19,7 @@ Upon an incoming HTTP request, the URL path will be used as a key to find an ent
 
 - An [entry object](#the-entry-object).
 - An URL; this will be returned in a `Location` header with HTTP `302 Found`.
-- Any arbitrary content; this will be returned with configurations from the associated [The Metadata Object](#the-metadata-object).
+- Any arbitrary content; this will be returned with configurations from the associated [metadata object](#the-metadata-object).
 
 ### Examples
 
