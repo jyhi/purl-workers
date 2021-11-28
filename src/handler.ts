@@ -22,7 +22,14 @@
 import type { Entry, Metadata } from "./types";
 
 /**
+ * An Entry Object alias resolver.
  *
+ * This function uses the {@link Entry.is} key in {@link v} to recursively
+ * search for an entry without it and returns it.
+ *
+ * @param v A result from Cloudflare KV's `getWithMetadata`.
+ * @returns A result from Cloudflare KV's `getWithMetadata` (but is guaranteed
+ * not to be an alias (without an {@link Entry.is} key)).
  */
 async function resolve(
   v: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>
@@ -46,7 +53,7 @@ async function resolve(
 }
 
 /**
- *
+ * The handler function receiving requests from Workers producing responses.
  */
 export async function handler(request: Request): Promise<Response> {
   const k = new URL(request.url).pathname;
