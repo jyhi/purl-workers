@@ -63,8 +63,8 @@ export async function handler(request: Request): Promise<Response> {
     const metadata = v.metadata as Metadata;
 
     return new Response(v.value, {
-      status: metadata.status ?? 200,
-      statusText: metadata.statusText ?? "OK",
+      status: metadata.status,
+      statusText: metadata.statusText,
       headers: new Headers({
         "content-type": metadata.contentType ?? "application/octet-stream",
       }),
