@@ -71,7 +71,7 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
-  let text = new TextDecoder().decode(v.value);
+  const text = new TextDecoder().decode(v.value);
 
   if (text === "") {
     return new Response(null, {
