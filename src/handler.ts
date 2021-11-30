@@ -38,12 +38,13 @@ async function resolve(
     return v;
   }
 
-  let vParsed;
-  try {
-    vParsed = JSON.parse(new TextDecoder().decode(v.value)) as Entry;
-  } catch {
-    vParsed = null;
-  }
+  const vParsed = (() => {
+    try {
+      return JSON.parse(new TextDecoder().decode(v.value)) as Entry;
+    } catch {
+      return undefined;
+    }
+  })();
 
   if (!vParsed || !vParsed.is) {
     return v;
@@ -80,12 +81,13 @@ export async function handler(request: Request): Promise<Response> {
 
   const text = new TextDecoder().decode(v.value);
 
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    url = null;
-  }
+  const url = (() => {
+    try {
+      return new URL(text);
+    } catch {
+      return undefined;
+    }
+  })();
 
   if (url) {
     return new Response(null, {
@@ -97,12 +99,13 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
-  let entry;
-  try {
-    entry = JSON.parse(text) as Entry;
-  } catch {
-    entry = null;
-  }
+  const entry = (() => {
+    try {
+      return JSON.parse(text) as Entry;
+    } catch {
+      return undefined;
+    }
+  })();
 
   if (!entry) {
     return new Response(v.value, {
