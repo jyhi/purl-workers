@@ -108,29 +108,6 @@ Use `"content"` to insert a payload into the response. Meanwhile, use a non-3xx 
 
 As a shortcut, for a simple `200 OK` with an arbitrary payload, one can simply put the payload in binary into a value and make use of the metadata functionality of Workers KV; see [The Metadata Object](#the-metadata-object) for what can be put into the metadata object.
 
-### No Content
-
-Instead of setting up a `HTTP 204` entry object:
-
-```json
-{
-  "status": 204,
-  "statusText": "No Content"
-}
-```
-
-An empty object can also create a `HTTP 204 No Content` response:
-
-```json
-{}
-```
-
-A completely empty value also creates a `HTTP 204 No Content` response:
-
-```
-
-```
-
 ## The Metadata Object
 
 Metadata is a functionality offered by Workers KV, allowing an arbitrary JSON object be associated with a KV entry. The metadata object that purl-workers recognizes has the following shape:
