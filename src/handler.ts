@@ -116,7 +116,7 @@ export async function handler(request: Request): Promise<Response> {
 
   const content = entry.content
     ? entry.contentBase64Decode
-      ? atob(entry.content)
+      ? Buffer.from(entry.content, "base64")
       : entry.content
     : null;
   const headers = new Headers();
