@@ -80,13 +80,6 @@ export async function handler(request: Request): Promise<Response> {
 
   const text = new TextDecoder().decode(v.value);
 
-  if (text === "") {
-    return new Response(null, {
-      status: 204,
-      statusText: "No Content",
-    });
-  }
-
   let url;
   try {
     url = new URL(text);
@@ -118,13 +111,6 @@ export async function handler(request: Request): Promise<Response> {
       headers: new Headers({
         "content-type": "application/octet-stream",
       }),
-    });
-  }
-
-  if (Object.keys(entry).length === 0) {
-    return new Response(null, {
-      status: 204,
-      statusText: "No Content",
     });
   }
 
