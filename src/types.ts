@@ -77,4 +77,10 @@ export interface Metadata {
    * A MIME type to use in the HTTP Content-Type header of the response.
    */
   contentType?: string;
+
+  /**
+   * A string or an array of string of the HTTP `Authorization:` header value. When present, the
+   * current entry should not be available to visitors who fail the authentication.
+   */
+  auth?: string | string[];
 }

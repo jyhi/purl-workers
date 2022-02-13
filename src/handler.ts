@@ -54,6 +54,46 @@ async function resolve(
 }
 
 /**
+ * A HTTP authorization helper.
+ *
+ * @param auth A string or an array of string of possible HTTP `Authorization:` header values.
+ * @param cred A string of the HTTP `Authorization:` header value from the incoming request.
+ * @returns true if authorzied, false if unauthorized.
+ */
+function authorize(auth?: string | string[], cred?: string | null) {
+  // If no authentication is required, then it's already authorized.
+  if (!auth) {
+    return true;
+  }
+
+  // If an authentication is set but no incoming credential is provided, then it's unauthorized.
+  if (!cred) {
+    return false;
+  }
+
+  // If an authentication is set and there is an incoming credential, we check and decide.
+  if (typeof auth == "string") {
+    if (auth === cred) {
+      return true;
+    } else {
+      return false;
+    }
+  } else if (typeof auth == "object") {
+    for (const a of auth) {
+      if (a === cred) {
+        return true;
+      }
+    }
+
+    // If the above loop ends without returning early, then no credential matches - unauthorized.
+    return false;
+  }
+
+  // This should not happen.
+  return false;
+}
+
+/**
  * The handler function receiving requests from Workers producing responses.
  */
 export async function handler(request: Request): Promise<Response> {
@@ -69,6 +109,16 @@ export async function handler(request: Request): Promise<Response> {
 
   if (v.metadata) {
     const metadata = v.metadata as Metadata;
+
+    // Check authorization details and authenticate, if there is any.
+    const cred = request.headers.get("Authorization");
+
+    if (!authorize(metadata.auth, cred)) {
+      return new Response(null, {
+        status: 403,
+        statusText: "Forbidden",
+      });
+    }
 
     return new Response(v.value, {
       status: metadata.status,
