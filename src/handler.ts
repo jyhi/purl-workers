@@ -107,12 +107,13 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
+  // The incoming credential.
+  const cred = request.headers.get("authorization");
+
   if (v.metadata) {
     const metadata = v.metadata as Metadata;
 
-    // Check authorization details and authenticate, if there is any.
-    const cred = request.headers.get("Authorization");
-
+    // Check authorization details in the metadata. Authenticate if there is any.
     if (!authorize(metadata.auth, cred)) {
       return new Response(null, {
         status: 403,
@@ -167,11 +168,20 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
+  // Check authorization details in the entry object. Authenticate if there is any.
+  if (!authorize(entry.auth, cred)) {
+    return new Response(null, {
+      status: 403,
+      statusText: "Forbidden",
+    });
+  }
+
   const content = entry.content
     ? entry.contentBase64Decode
       ? Buffer.from(entry.content, "base64")
       : entry.content
     : null;
+
   const headers = new Headers();
 
   if (entry.location) {
