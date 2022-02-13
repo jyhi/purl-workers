@@ -56,6 +56,7 @@ The entry object is represented in JSON, with the following shape:
   "status": 204,
   "statusText": "<reason phrase>",
   "location": "http://www.example.com",
+  "auth": "Basic cHVybDp3b3JrZXI=",
   "contentType": "application/x-example",
   "contentBase64Decode": false,
   "content": "Lorem ipsum dolor sit amet..."
@@ -108,6 +109,29 @@ Use `"content"` to insert a payload into the response. Meanwhile, use a non-3xx 
 
 As a shortcut, for a simple `200 OK` with an arbitrary payload, one can simply put the payload in binary into a value and make use of the metadata functionality of Workers KV; see [The Metadata Object](#the-metadata-object) for what can be put into the metadata object.
 
+### Authorization
+
+Use `"auth"` to make an entry private, requiring an `Authorization:` HTTP header to view. `"auth"` accepts either a string or an array of string. The strings should be the exact value of the HTTP `Authorization:` header. For example, a `Basic` authorization with user name `purl` and password `workers` would require:
+
+```json
+{
+  "auth": "Basic cHVybDp3b3JrZXJz"
+}
+```
+
+Multiple authorization options can be put into an array:
+
+```json
+{
+  "auth": [
+    "Basic cHVybDp3b3JrZXJz",
+    "Bearer 158ea011-a482-48e7-bb6e-8bb292717382"
+  ]
+}
+```
+
+This can also be put in [The Metadata Object](#the-metadata-object); see below.
+
 ## The Metadata Object
 
 Metadata is a functionality offered by Workers KV, allowing an arbitrary JSON object be associated with a KV entry. The metadata object that purl-workers recognizes has the following shape:
@@ -116,7 +140,8 @@ Metadata is a functionality offered by Workers KV, allowing an arbitrary JSON ob
 {
   "status": 123,
   "statusText": "<reason phrase>",
-  "contentType": "application/x-example"
+  "contentType": "application/x-example",
+  "auth": "Basic cHVybDp3b3JrZXI="
 }
 ```
 
@@ -130,7 +155,7 @@ Every field is optional. An empty metadata object (`{}`) will result in the foll
 }
 ```
 
-Most often, only the `"contentType"` needs to be specified:
+`"auth"` will be `undefined`, meaning no authorization. Most often, only `"contentType"` needs to be specified:
 
 ```json
 {
