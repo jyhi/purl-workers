@@ -2,6 +2,8 @@
 
 A [Persistent URL][purl] (or a URL shortening) service running on [Cloudflare Workers][cfwkrs], plus a few bells and whistles.
 
+[![Deploy with Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lmy441900/purl-workers)
+
 ## Deploy
 
 Assuming [Cloudflare][cf] experience:
