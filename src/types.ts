@@ -44,9 +44,9 @@ export interface Entry {
   location?: string;
 
   /**
-    * A string or an array of string of the HTTP `Authorization:` header value. When present, the
-    * current entry should not be available to visitors who fail the authentication.
-    */
+   * A string or an array of string of the HTTP `Authorization:` header value. When present, the
+   * current entry should not be available to visitors who fail the authentication.
+   */
   auth?: string | string[];
 
   /**
