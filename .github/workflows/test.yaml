@@ -1,8 +1,7 @@
-name: CI
+name: Test
 on:
   - push
   - pull_request
-  - workflow_call
 
 jobs:
   test:
@@ -24,18 +23,3 @@ jobs:
 
       - name: Run Tests
         run: npm run test
-
-  deploy:
-    name: Deploy with Workers
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check Out Source Code
-        uses: actions/checkout@v3
-
-      - name: Deploy with Wrangler
-        uses: cloudflare/wrangler-action@1.3.0
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-        env:
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
