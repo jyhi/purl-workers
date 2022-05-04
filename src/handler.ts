@@ -34,10 +34,12 @@ import type { Entry, Metadata } from "./types";
 async function resolve(
   kvValue: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>
 ): Promise<KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>> {
+  // Recursion abort condition: no more alias is found.
   if (!kvValue.value) {
     return kvValue;
   }
 
+  // Try to parse the value as a JSON entry object.
   const vParsed = (() => {
     try {
       return JSON.parse(new TextDecoder().decode(kvValue.value)) as Entry;
@@ -46,10 +48,12 @@ async function resolve(
     }
   })();
 
+  // If there isn't any more alias, return self.
   if (!vParsed || !vParsed.is) {
     return kvValue;
   }
 
+  // Otherwise, continue resolving.
   return resolve(await kv.getWithMetadata(vParsed.is, "arrayBuffer"));
 }
 
@@ -97,9 +101,11 @@ function authorize(auth?: string | string[], cred?: string | null) {
  * The handler function receiving requests from Workers producing responses.
  */
 export async function handler(request: Request): Promise<Response> {
+  // Fetch the value from database using the path name as the key.
   const kvKey = new URL(request.url).pathname;
   const kvValue = await resolve(await kv.getWithMetadata(kvKey, "arrayBuffer"));
 
+  // If value is null, then it doesn't exist.
   if (!kvValue.value) {
     return new Response(null, {
       status: 404,
@@ -110,10 +116,11 @@ export async function handler(request: Request): Promise<Response> {
   // The incoming credential.
   const cred = request.headers.get("authorization");
 
+  // If metadata exists, then it takes precedence.
   if (kvValue.metadata) {
     const metadata = kvValue.metadata as Metadata;
 
-    // Check authorization details in the metadata. Authenticate if there is any.
+    // If the credential has failed to authorize, return Forbidden. (XXX: why not 401?)
     if (!authorize(metadata.auth, cred)) {
       return new Response(null, {
         status: 403,
@@ -121,6 +128,7 @@ export async function handler(request: Request): Promise<Response> {
       });
     }
 
+    // Return the raw content if authorization has passed.
     return new Response(kvValue.value, {
       status: metadata.status,
       statusText: metadata.statusText,
@@ -130,8 +138,10 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
+  // Decode the value from a binary array to a text.
   const text = new TextDecoder().decode(kvValue.value);
 
+  // Try to parse the textual value.
   const url = (() => {
     try {
       return new URL(text);
@@ -140,6 +150,7 @@ export async function handler(request: Request): Promise<Response> {
     }
   })();
 
+  // If the texual value is a URL, then it's the location to redirect to.
   if (url) {
     return new Response(null, {
       status: 302,
@@ -150,6 +161,7 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
+  // If it's not an URL, then try to parse it as a JSON.
   const entry = (() => {
     try {
       return JSON.parse(text) as Entry;
@@ -158,6 +170,7 @@ export async function handler(request: Request): Promise<Response> {
     }
   })();
 
+  // If it's not a JSON either, then we don't recognize this vaule. Return it as raw content.
   if (!entry) {
     return new Response(kvValue.value, {
       status: 200,
@@ -168,7 +181,7 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
-  // Check authorization details in the entry object. Authenticate if there is any.
+  // If the credential has failed to authorize, return Forbidden. (XXX: why not 401?)
   if (!authorize(entry.auth, cred)) {
     return new Response(null, {
       status: 403,
@@ -176,12 +189,14 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
+  // If there is `content` option, use it. Decode it from Base64 if `contentBase64Decode` is set.
   const content = entry.content
     ? entry.contentBase64Decode
       ? Buffer.from(entry.content, "base64")
       : entry.content
     : null;
 
+  // Assemble HTTP headers to return.
   const headers = new Headers();
 
   if (entry.location) {
@@ -192,6 +207,7 @@ export async function handler(request: Request): Promise<Response> {
     headers.append("content-type", entry.contentType);
   }
 
+  // The response generated from the entry object.
   return new Response(content, {
     status: entry.status,
     statusText: entry.statusText,
