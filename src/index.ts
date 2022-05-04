@@ -1,5 +1,5 @@
 /* A Persistent URL (PURL) service running on Cloudflare Workers
- * Copyright (C) 2021 Junde Yhi <junde@yhi.moe>
+ * Copyright (C) 2021-2022 Junde Yhi <junde@yhi.moe>
  *
  * The entry point for Cloudflare Workers.
  *
