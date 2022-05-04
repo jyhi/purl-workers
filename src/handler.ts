@@ -32,22 +32,22 @@ import type { Entry, Metadata } from "./types";
  * not to be an alias (without an {@link Entry.is} key)).
  */
 async function resolve(
-  v: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>
+  kvValue: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>
 ): Promise<KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>> {
-  if (!v.value) {
-    return v;
+  if (!kvValue.value) {
+    return kvValue;
   }
 
   const vParsed = (() => {
     try {
-      return JSON.parse(new TextDecoder().decode(v.value)) as Entry;
+      return JSON.parse(new TextDecoder().decode(kvValue.value)) as Entry;
     } catch {
       return undefined;
     }
   })();
 
   if (!vParsed || !vParsed.is) {
-    return v;
+    return kvValue;
   }
 
   return resolve(await kv.getWithMetadata(vParsed.is, "arrayBuffer"));
@@ -97,10 +97,10 @@ function authorize(auth?: string | string[], cred?: string | null) {
  * The handler function receiving requests from Workers producing responses.
  */
 export async function handler(request: Request): Promise<Response> {
-  const k = new URL(request.url).pathname;
-  const v = await resolve(await kv.getWithMetadata(k, "arrayBuffer"));
+  const kvKey = new URL(request.url).pathname;
+  const kvValue = await resolve(await kv.getWithMetadata(kvKey, "arrayBuffer"));
 
-  if (!v.value) {
+  if (!kvValue.value) {
     return new Response(null, {
       status: 404,
       statusText: "Not Found",
@@ -110,8 +110,8 @@ export async function handler(request: Request): Promise<Response> {
   // The incoming credential.
   const cred = request.headers.get("authorization");
 
-  if (v.metadata) {
-    const metadata = v.metadata as Metadata;
+  if (kvValue.metadata) {
+    const metadata = kvValue.metadata as Metadata;
 
     // Check authorization details in the metadata. Authenticate if there is any.
     if (!authorize(metadata.auth, cred)) {
@@ -121,7 +121,7 @@ export async function handler(request: Request): Promise<Response> {
       });
     }
 
-    return new Response(v.value, {
+    return new Response(kvValue.value, {
       status: metadata.status,
       statusText: metadata.statusText,
       headers: new Headers({
@@ -130,7 +130,7 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
-  const text = new TextDecoder().decode(v.value);
+  const text = new TextDecoder().decode(kvValue.value);
 
   const url = (() => {
     try {
@@ -159,7 +159,7 @@ export async function handler(request: Request): Promise<Response> {
   })();
 
   if (!entry) {
-    return new Response(v.value, {
+    return new Response(kvValue.value, {
       status: 200,
       statusText: "OK",
       headers: new Headers({
