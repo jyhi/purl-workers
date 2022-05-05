@@ -21,11 +21,19 @@
 
 import type { Expression } from "./types";
 
+// WIP
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 /**
  * Evaluate `expr` to a boolean value.
  *
  * Work in progress.
  */
-export function evaluateExpression(expr: Expression, request: Request): boolean {
+export function evaluateExpression(
+  expr: Expression,
+  request: Request
+): boolean {
   return true;
 }
+
+/* eslint-enable @typescript-eslint/no-unused-vars */

@@ -30,7 +30,7 @@ import type { Entry, Metadata } from "./types";
  *
  * @param entry The entry object to create a response from.
  */
-async function respondFromEntry(entry: Entry): Promise<Response> {
+function respondFromEntry(entry: Entry): Response {
   const content = entry.content
     ? entry.contentBase64Decode
       ? Buffer.from(entry.content, "base64")
@@ -62,7 +62,10 @@ async function respondFromEntry(entry: Entry): Promise<Response> {
  * @param entry The entry object to create a response from.
  * @param request The request received, working as a context.
  */
-async function respondWithEntry(entry: Entry, request: Request): Promise<Response> {
+async function respondWithEntry(
+  entry: Entry,
+  request: Request
+): Promise<Response> {
   const predicate = entry.if ? evaluateExpression(entry.if, request) : true;
 
   if (predicate) {
@@ -70,8 +73,7 @@ async function respondWithEntry(entry: Entry, request: Request): Promise<Respons
       if (typeof entry.then === "string") {
         return respondWithKey(entry.then, request);
       } else if (typeof entry.then === "object") {
-        const entryThen = entry.then as Entry;
-        return respondWithEntry(entryThen, request);
+        return respondWithEntry(entry.then, request);
       } else {
         // This should not happen.
         throw null;
@@ -84,8 +86,7 @@ async function respondWithEntry(entry: Entry, request: Request): Promise<Respons
       if (typeof entry.else === "string") {
         return respondWithKey(entry.else, request);
       } else if (typeof entry.else === "object") {
-        const entryElse = entry.else as Entry;
-        return respondWithEntry(entryElse, request);
+        return respondWithEntry(entry.else, request);
       } else {
         // This should not happen.
         throw null;
@@ -111,7 +112,10 @@ async function respondWithEntry(entry: Entry, request: Request): Promise<Respons
  * @param kvKey The key to KV database.
  * @param request The request received, working as a context.
  */
-async function respondWithKey(kvKey: string, request: Request): Promise<Response> {
+async function respondWithKey(
+  kvKey: string,
+  request: Request
+): Promise<Response> {
   const kvEntry = await kv.getWithMetadata(kvKey, "arrayBuffer");
 
   // The value could be non-existent.
@@ -125,7 +129,9 @@ async function respondWithKey(kvKey: string, request: Request): Promise<Response
   // Metadata takes precedence.
   if (kvEntry.metadata) {
     const metadata = kvEntry.metadata as Metadata;
-    const predicate = metadata.if ? evaluateExpression(metadata.if, request) : true;
+    const predicate = metadata.if
+      ? evaluateExpression(metadata.if, request)
+      : true;
 
     if (!predicate) {
       return new Response(null, {
@@ -155,12 +161,12 @@ async function respondWithKey(kvKey: string, request: Request): Promise<Response
         location: new URL(textValue).toString(),
       }),
     });
-  } catch { }
+  } catch {} // eslint-disable-line no-empty
 
   // Try to parse the text value as a JSON entry object.
   try {
     return respondWithEntry(JSON.parse(textValue) as Entry, request);
-  } catch { }
+  } catch {} // eslint-disable-line no-empty
 
   // Otherwise, we don't recognize the value. Returning it as a raw value.
   return new Response(kvEntry.value, {
