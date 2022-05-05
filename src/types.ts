@@ -20,7 +20,10 @@
  */
 
 /**
- * Expression.
+ * A predicate expression.
+ *
+ * Basic elements are in `string`s, while function invocations are in arrays of `Expression`s. The
+ * first `string` is the name of function, and all the latter are arguments to it.
  */
 export type Expression = (string | Expression)[];
 
@@ -34,14 +37,14 @@ export interface Entry {
   if?: Expression;
 
   /**
-   * A branch to take when {@link if} evaluates to `true`.
+   * A branch to take when `{@link if}` evaluates to `true`.
    *
    * Can be a key as an alias or an entry object.
    */
   then?: string | Entry;
 
   /**
-   * A branch to take when {@link if} evaluates to `false`.
+   * A branch to take when `{@link if}` evaluates to `false`.
    *
    * Can be a key as an alias or an entry object.
    */
@@ -68,7 +71,7 @@ export interface Entry {
   contentType?: string;
 
   /**
-   * Whether {@link content} should be Base64-decoded before we send it back.
+   * Whether `{@link content}` should be Base64-decoded before we send it back.
    */
   contentBase64Decode?: boolean;
 
@@ -101,10 +104,4 @@ export interface Metadata {
    * A MIME type to use in the HTTP Content-Type header of the response.
    */
   contentType?: string;
-
-  /**
-   * A string or an array of string of the HTTP `Authorization:` header value. When present, the
-   * current entry should not be available to visitors who fail the authentication.
-   */
-  auth?: string | string[];
 }
