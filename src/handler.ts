@@ -60,17 +60,18 @@ async function respondFromEntry(entry: Entry): Promise<Response> {
  * This function evaluates `{@link Entry.if}` and respond with different strategies.
  *
  * @param entry The entry object to create a response from.
+ * @param request The request received, working as a context.
  */
-async function respondWithEntry(entry: Entry): Promise<Response> {
-  const predicate = entry.if ? evaluateExpression(entry.if) : true;
+async function respondWithEntry(entry: Entry, request: Request): Promise<Response> {
+  const predicate = entry.if ? evaluateExpression(entry.if, request) : true;
 
   if (predicate) {
     if (entry.then) {
       if (typeof entry.then === "string") {
-        return respondWithKey(entry.then);
+        return respondWithKey(entry.then, request);
       } else if (typeof entry.then === "object") {
         const entryThen = entry.then as Entry;
-        return respondWithEntry(entryThen);
+        return respondWithEntry(entryThen, request);
       } else {
         // This should not happen.
         throw null;
@@ -81,10 +82,10 @@ async function respondWithEntry(entry: Entry): Promise<Response> {
   } else {
     if (entry.else) {
       if (typeof entry.else === "string") {
-        return respondWithKey(entry.else);
+        return respondWithKey(entry.else, request);
       } else if (typeof entry.else === "object") {
         const entryElse = entry.else as Entry;
-        return respondWithEntry(entryElse);
+        return respondWithEntry(entryElse, request);
       } else {
         // This should not happen.
         throw null;
@@ -108,8 +109,9 @@ async function respondWithEntry(entry: Entry): Promise<Response> {
  * - If none of the above applies, the raw value will be returned.
  *
  * @param kvKey The key to KV database.
+ * @param request The request received, working as a context.
  */
-async function respondWithKey(kvKey: string): Promise<Response> {
+async function respondWithKey(kvKey: string, request: Request): Promise<Response> {
   const kvEntry = await kv.getWithMetadata(kvKey, "arrayBuffer");
 
   // The value could be non-existent.
@@ -123,7 +125,7 @@ async function respondWithKey(kvKey: string): Promise<Response> {
   // Metadata takes precedence.
   if (kvEntry.metadata) {
     const metadata = kvEntry.metadata as Metadata;
-    const predicate = metadata.if ? evaluateExpression(metadata.if) : true;
+    const predicate = metadata.if ? evaluateExpression(metadata.if, request) : true;
 
     if (!predicate) {
       return new Response(null, {
@@ -157,7 +159,7 @@ async function respondWithKey(kvKey: string): Promise<Response> {
 
   // Try to parse the text value as a JSON entry object.
   try {
-    return respondWithEntry(JSON.parse(textValue) as Entry);
+    return respondWithEntry(JSON.parse(textValue) as Entry, request);
   } catch { }
 
   // Otherwise, we don't recognize the value. Returning it as a raw value.
@@ -172,7 +174,9 @@ async function respondWithKey(kvKey: string): Promise<Response> {
 
 /**
  * The Cloudflare "fetch" event listener handler.
+ *
+ * @param request The request received.
  */
 export async function handler(request: Request): Promise<Response> {
-  return respondWithKey(new URL(request.url).pathname);
+  return respondWithKey(new URL(request.url).pathname, request);
 }

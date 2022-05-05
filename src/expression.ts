@@ -19,13 +19,13 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { Expression, Entry } from "./types";
+import type { Expression } from "./types";
 
 /**
  * Evaluate `expr` to a boolean value.
  *
  * Work in progress.
  */
-export function evaluateExpression(expr: Expression): boolean {
+export function evaluateExpression(expr: Expression, request: Request): boolean {
   return true;
 }
