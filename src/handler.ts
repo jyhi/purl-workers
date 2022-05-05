@@ -19,184 +19,24 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+import { evaluateExpression } from "./expression";
 import type { Entry, Metadata } from "./types";
 
 /**
- * An Entry Object alias resolver.
+ * Create a response from the entry, without branching.
  *
- * This function uses the {@link Entry.is} key in {@link v} to recursively
- * search for an entry without it and returns it.
+ * This function disregards `{@link Entry.if}`, `{@link Entry.then}`, and `{@link Entry.else}` and
+ * creates a response from other fields.
  *
- * @param v A result from Cloudflare KV's `getWithMetadata`.
- * @returns A result from Cloudflare KV's `getWithMetadata` (but is guaranteed
- * not to be an alias (without an {@link Entry.is} key)).
+ * @param entry The entry object to create a response from.
  */
-async function resolve(
-  kvValue: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>
-): Promise<KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>> {
-  // Recursion abort condition: no more alias is found.
-  if (!kvValue.value) {
-    return kvValue;
-  }
-
-  // Try to parse the value as a JSON entry object.
-  const vParsed = (() => {
-    try {
-      return JSON.parse(new TextDecoder().decode(kvValue.value)) as Entry;
-    } catch {
-      return undefined;
-    }
-  })();
-
-  // If there isn't any more alias, return self.
-  if (!vParsed || !vParsed.is) {
-    return kvValue;
-  }
-
-  // Otherwise, continue resolving.
-  return resolve(await kv.getWithMetadata(vParsed.is, "arrayBuffer"));
-}
-
-/**
- * A HTTP authorization helper.
- *
- * @param auth A string or an array of string of possible HTTP `Authorization:` header values.
- * @param cred A string of the HTTP `Authorization:` header value from the incoming request.
- * @returns true if authorzied, false if unauthorized.
- */
-function authorize(auth?: string | string[], cred?: string | null) {
-  // If no authentication is required, then it's already authorized.
-  if (!auth) {
-    return true;
-  }
-
-  // If an authentication is set but no incoming credential is provided, then it's unauthorized.
-  if (!cred) {
-    return false;
-  }
-
-  // If an authentication is set and there is an incoming credential, we check and decide.
-  if (typeof auth == "string") {
-    if (auth === cred) {
-      return true;
-    } else {
-      return false;
-    }
-  } else if (typeof auth == "object") {
-    for (const a of auth) {
-      if (a === cred) {
-        return true;
-      }
-    }
-
-    // If the above loop ends without returning early, then no credential matches - unauthorized.
-    return false;
-  }
-
-  // This should not happen.
-  return false;
-}
-
-/**
- * The handler function receiving requests from Workers producing responses.
- */
-export async function handler(request: Request): Promise<Response> {
-  // Fetch the value from database using the path name as the key.
-  const kvKey = new URL(request.url).pathname;
-  const kvValue = await resolve(await kv.getWithMetadata(kvKey, "arrayBuffer"));
-
-  // If value is null, then it doesn't exist.
-  if (!kvValue.value) {
-    return new Response(null, {
-      status: 404,
-      statusText: "Not Found",
-    });
-  }
-
-  // The incoming credential.
-  const cred = request.headers.get("authorization");
-
-  // If metadata exists, then it takes precedence.
-  if (kvValue.metadata) {
-    const metadata = kvValue.metadata as Metadata;
-
-    // If the credential has failed to authorize, return Forbidden. (XXX: why not 401?)
-    if (!authorize(metadata.auth, cred)) {
-      return new Response(null, {
-        status: 403,
-        statusText: "Forbidden",
-      });
-    }
-
-    // Return the raw content if authorization has passed.
-    return new Response(kvValue.value, {
-      status: metadata.status,
-      statusText: metadata.statusText,
-      headers: new Headers({
-        "content-type": metadata.contentType ?? "application/octet-stream",
-      }),
-    });
-  }
-
-  // Decode the value from a binary array to a text.
-  const text = new TextDecoder().decode(kvValue.value);
-
-  // Try to parse the textual value.
-  const url = (() => {
-    try {
-      return new URL(text);
-    } catch {
-      return undefined;
-    }
-  })();
-
-  // If the texual value is a URL, then it's the location to redirect to.
-  if (url) {
-    return new Response(null, {
-      status: 302,
-      statusText: "Found",
-      headers: new Headers({
-        location: url.toString(),
-      }),
-    });
-  }
-
-  // If it's not an URL, then try to parse it as a JSON.
-  const entry = (() => {
-    try {
-      return JSON.parse(text) as Entry;
-    } catch {
-      return undefined;
-    }
-  })();
-
-  // If it's not a JSON either, then we don't recognize this vaule. Return it as raw content.
-  if (!entry) {
-    return new Response(kvValue.value, {
-      status: 200,
-      statusText: "OK",
-      headers: new Headers({
-        "content-type": "application/octet-stream",
-      }),
-    });
-  }
-
-  // If the credential has failed to authorize, return Forbidden. (XXX: why not 401?)
-  if (!authorize(entry.auth, cred)) {
-    return new Response(null, {
-      status: 403,
-      statusText: "Forbidden",
-    });
-  }
-
-  // If there is `content` option, use it. Decode it from Base64 if `contentBase64Decode` is set.
+async function respondFromEntry(entry: Entry): Promise<Response> {
   const content = entry.content
     ? entry.contentBase64Decode
       ? Buffer.from(entry.content, "base64")
       : entry.content
     : null;
 
-  // Assemble HTTP headers to return.
   const headers = new Headers();
 
   if (entry.location) {
@@ -207,10 +47,132 @@ export async function handler(request: Request): Promise<Response> {
     headers.append("content-type", entry.contentType);
   }
 
-  // The response generated from the entry object.
   return new Response(content, {
     status: entry.status,
     statusText: entry.statusText,
     headers: headers,
   });
+}
+
+/**
+ * Create a response with the entry, branch and resolve entry objects.
+ *
+ * This function evaluates `{@link Entry.if}` and respond with different strategies.
+ *
+ * @param entry The entry object to create a response from.
+ */
+async function respondWithEntry(entry: Entry): Promise<Response> {
+  const predicate = entry.if ? evaluateExpression(entry.if) : true;
+
+  if (predicate) {
+    if (entry.then) {
+      if (typeof entry.then === "string") {
+        return respondWithKey(entry.then);
+      } else if (typeof entry.then === "object") {
+        const entryThen = entry.then as Entry;
+        return respondWithEntry(entryThen);
+      } else {
+        // This should not happen.
+        throw null;
+      }
+    } else {
+      return respondFromEntry(entry);
+    }
+  } else {
+    if (entry.else) {
+      if (typeof entry.else === "string") {
+        return respondWithKey(entry.else);
+      } else if (typeof entry.else === "object") {
+        const entryElse = entry.else as Entry;
+        return respondWithEntry(entryElse);
+      } else {
+        // This should not happen.
+        throw null;
+      }
+    } else {
+      return new Response(null, {
+        status: 403,
+        statusText: "Forbidden",
+      });
+    }
+  }
+}
+
+/**
+ * Create a response with a string as a key to search from the KV database.
+ *
+ * - If `kvKey` doesn't exist, 404 will be returned.
+ * - If metadata exist, the value will be returned along with the associated data.
+ * - If the value can be parsed as a URL, it'll be returned with 302.
+ * - If the value can be parsed as a JSON entry object, it'll be parsed and returned.
+ * - If none of the above applies, the raw value will be returned.
+ *
+ * @param kvKey The key to KV database.
+ */
+async function respondWithKey(kvKey: string): Promise<Response> {
+  const kvEntry = await kv.getWithMetadata(kvKey, "arrayBuffer");
+
+  // The value could be non-existent.
+  if (!kvEntry.value) {
+    return new Response(null, {
+      status: 404,
+      statusText: "Not Found",
+    });
+  }
+
+  // Metadata takes precedence.
+  if (kvEntry.metadata) {
+    const metadata = kvEntry.metadata as Metadata;
+    const predicate = metadata.if ? evaluateExpression(metadata.if) : true;
+
+    if (!predicate) {
+      return new Response(null, {
+        status: 403,
+        statusText: "Forbidden",
+      });
+    }
+
+    return new Response(kvEntry.value, {
+      status: metadata.status,
+      statusText: metadata.statusText,
+      headers: new Headers({
+        "content-type": metadata.contentType ?? "application/octet-stream",
+      }),
+    });
+  }
+
+  // Try to parse the value as text, preparing for further processing.
+  const textValue = new TextDecoder().decode(kvEntry.value);
+
+  // Try to parse the text value as a URL.
+  try {
+    return new Response(null, {
+      status: 302,
+      statusText: "Found",
+      headers: new Headers({
+        location: new URL(textValue).toString(),
+      }),
+    });
+  } catch { }
+
+  // Try to parse the text value as a JSON entry object.
+  try {
+    return respondWithEntry(JSON.parse(textValue) as Entry);
+  } catch { }
+
+  // Otherwise, we don't recognize the value. Returning it as a raw value.
+  return new Response(kvEntry.value, {
+    status: 200,
+    statusText: "OK",
+    headers: new Headers({
+      "content-type": "application/octet-stream",
+    }),
+  });
+}
+
+/**
+ * The Cloudflare "fetch" event listener handler.
+ */
+export async function handler(request: Request): Promise<Response> {
+  return respondWithKey(new URL(request.url).pathname);
 }

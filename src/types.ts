@@ -20,13 +20,32 @@
  */
 
 /**
+ * Expression.
+ */
+export type Expression = (string | Expression)[];
+
+/**
  * The Entry Object.
  */
 export interface Entry {
   /**
-   * An alias pointing to another key.
+   * A predicate / expression declaring conditions to access the entry.
    */
-  is?: string;
+  if?: Expression;
+
+  /**
+   * A branch to take when {@link if} evaluates to `true`.
+   *
+   * Can be a key as an alias or an entry object.
+   */
+  then?: string | Entry;
+
+  /**
+   * A branch to take when {@link if} evaluates to `false`.
+   *
+   * Can be a key as an alias or an entry object.
+   */
+  else?: string | Entry;
 
   /**
    * A HTTP status code to use in the response.
@@ -42,12 +61,6 @@ export interface Entry {
    * An URL to use in the HTTP Location header of the response.
    */
   location?: string;
-
-  /**
-   * A string or an array of string of the HTTP `Authorization:` header value. When present, the
-   * current entry should not be available to visitors who fail the authentication.
-   */
-  auth?: string | string[];
 
   /**
    * A MIME type to use in the HTTP Content-Type header of the response.
@@ -69,6 +82,11 @@ export interface Entry {
  * The Metadata Object.
  */
 export interface Metadata {
+  /**
+   * A predicate / expression declaring conditions to access the entry.
+   */
+  if?: Expression;
+
   /**
    * A HTTP status code to use in the response.
    */
