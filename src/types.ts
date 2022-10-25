@@ -1,4 +1,4 @@
-/* A Persistent URL (PURL) service running on Cloudflare Workers
+/* PURL-Workers: A Persistent URL (PURL) service running on Cloudflare Workers.
  * Copyright (C) 2021-2022 Junde Yhi <junde@yhi.moe>
  *
  * Type definitions.
@@ -20,88 +20,55 @@
  */
 
 /**
- * A predicate expression.
- *
- * Basic elements are in `string`s, while function invocations are in arrays of `Expression`s. The
- * first `string` is the name of function, and all the latter are arguments to it.
+ * A type to define bindings assigned.
  */
-export type Expression = (string | Expression)[];
+export interface Environment {
+  /** The binding of Workers KV. */
+  kv?: KVNamespace;
 
-/**
- * The Entry Object.
- */
-export interface Entry {
-  /**
-   * A predicate / expression declaring conditions to access the entry.
-   */
-  if?: Expression;
-
-  /**
-   * A branch to take when `{@link if}` evaluates to `true`.
-   *
-   * Can be a key as an alias or an entry object.
-   */
-  then?: string | Entry;
-
-  /**
-   * A branch to take when `{@link if}` evaluates to `false`.
-   *
-   * Can be a key as an alias or an entry object.
-   */
-  else?: string | Entry;
-
-  /**
-   * A HTTP status code to use in the response.
-   */
-  status?: number;
-
-  /**
-   * A HTTP reason phrase to use in the response.
-   */
-  statusText?: string;
-
-  /**
-   * An URL to use in the HTTP Location header of the response.
-   */
-  location?: string;
-
-  /**
-   * A MIME type to use in the HTTP Content-Type header of the response.
-   */
-  contentType?: string;
-
-  /**
-   * Whether `{@link content}` should be Base64-decoded before we send it back.
-   */
-  contentBase64Decode?: boolean;
-
-  /**
-   * A payload to be appended to the response.
-   */
-  content?: string;
+  /** Other bindings may be configured and present or not. */
+  [x: symbol | string]: unknown;
 }
 
 /**
- * The Metadata Object.
+ * A responder accepts the request and asynchronously produces a response.
+ *
+ * The parameters are the same for the fetch handler in the module worker
+ * syntax. See: <https://developers.cloudflare.com/workers/runtime-apis/fetch-event/#syntax-module-worker>.
  */
-export interface Metadata {
+export type Responder = (
+  req: Request,
+  env: Environment,
+  ctx: ExecutionContext
+) => Promise<Response>;
+
+/**
+ * Different types of data that can be an entry.
+ */
+export type Entry = Responder | ResponseInit | string;
+
+/**
+ * A record (dictionary) of {@link Entry}.
+ *
+ * Used in the hard-coded entry list in the configuration file.
+ */
+export type Entries = Record<string | number | symbol, Entry>;
+
+/**
+ * PURL-Workers configuration options.
+ */
+export interface Config {
   /**
-   * A predicate / expression declaring conditions to access the entry.
+   * The status code to use when returning a temporary redirect.
+   *
+   * The default is 302.
    */
-  if?: Expression;
+  temporaryRedirect?: number;
 
   /**
-   * A HTTP status code to use in the response.
+   * The status code to use when returning a permanent redirect.
+   *
+   * The default is 301.
    */
-  status?: number;
-
-  /**
-   * A HTTP reason phrase to use in the response.
-   */
-  statusText?: string;
-
-  /**
-   * A MIME type to use in the HTTP Content-Type header of the response.
-   */
-  contentType?: string;
+  permanentRedirect?: number;
 }

@@ -1,4 +1,4 @@
-/* A Persistent URL (PURL) service running on Cloudflare Workers
+/* PURL-Workers: A Persistent URL (PURL) service running on Cloudflare Workers.
  * Copyright (C) 2021-2022 Junde Yhi <junde@yhi.moe>
  *
  * The handler processing requests and producing responses.
@@ -19,170 +19,173 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { evaluateExpression } from "./expression";
-import type { Entry, Metadata } from "./types";
+import { isDef, isObject, isUndef } from "./common";
+import { Environment, Responder } from "./types";
+import { config, entries as entriesFromConfig } from "../purl-workers.config";
 
-/**
- * Create a response from the entry, without branching.
- *
- * This function disregards `{@link Entry.if}`, `{@link Entry.then}`, and `{@link Entry.else}` and
- * creates a response from other fields.
- *
- * @param entry The entry object to create a response from.
- */
-function respondFromEntry(entry: Entry): Response {
-  const content = entry.content
-    ? entry.contentBase64Decode
-      ? Buffer.from(entry.content, "base64")
-      : entry.content
-    : null;
+function respondFromResponseInit(
+  init: ResponseInit,
+  body?: BodyInit | undefined | null
+): Response {
+  return new Response(body, init);
+}
 
-  const headers = new Headers();
+async function respondFromString(
+  str: string,
+  req: Request,
+  env: Environment,
+  ctx: ExecutionContext
+): Promise<Response> {
+  try {
+    const url = new URL(str);
+    return new Response(undefined, {
+      status: config.temporaryRedirect ?? 302,
+      headers: {
+        location: url.toString(),
+      },
+    });
+  } catch {} // eslint-disable-line no-empty
 
-  if (entry.location) {
-    headers.append("location", entry.location);
+  if (str[0] === "!") {
+    try {
+      const url = new URL(str.slice(1));
+      return new Response(undefined, {
+        status: config.permanentRedirect ?? 301,
+        headers: {
+          location: url.toString(),
+        },
+      });
+    } catch {} // eslint-disable-line no-empty
   }
 
-  if (entry.contentType) {
-    headers.append("content-type", entry.contentType);
+  const aliasResponder = await findResponder(str, req, env, ctx);
+  if (isDef(aliasResponder)) {
+    return await aliasResponder(req, env, ctx);
   }
 
-  return new Response(content, {
-    status: entry.status,
-    statusText: entry.statusText,
-    headers: headers,
+  return new Response(str, {
+    headers: {
+      "Content-Type": "text/plain",
+    },
   });
 }
 
-/**
- * Create a response with the entry, branch and resolve entry objects.
- *
- * This function evaluates `{@link Entry.if}` and respond with different strategies.
- *
- * @param entry The entry object to create a response from.
- * @param request The request received, working as a context.
- */
-async function respondWithEntry(
-  entry: Entry,
-  request: Request
-): Promise<Response> {
-  const predicate = entry.if ? evaluateExpression(entry.if, request) : true;
-
-  if (predicate) {
-    if (entry.then) {
-      if (typeof entry.then === "string") {
-        return respondWithKey(entry.then, request);
-      } else if (typeof entry.then === "object") {
-        return respondWithEntry(entry.then, request);
-      } else {
-        // This should not happen.
-        throw null;
-      }
-    } else {
-      return respondFromEntry(entry);
-    }
-  } else {
-    if (entry.else) {
-      if (typeof entry.else === "string") {
-        return respondWithKey(entry.else, request);
-      } else if (typeof entry.else === "object") {
-        return respondWithEntry(entry.else, request);
-      } else {
-        // This should not happen.
-        throw null;
-      }
-    } else {
-      return new Response(null, {
-        status: 403,
-        statusText: "Forbidden",
-      });
-    }
+function getResponderFromUnknown(
+  x: unknown,
+  body: ArrayBuffer | undefined | null,
+  req: Request,
+  env: Environment,
+  ctx: ExecutionContext
+): Responder {
+  if (typeof x === "function") {
+    return <Responder>x;
   }
+
+  if (isObject(x)) {
+    // Yes, we are returning an async function...
+    // eslint-disable-next-line @typescript-eslint/require-await
+    return async () => respondFromResponseInit(x, body);
+  }
+
+  if (typeof x === "string") {
+    return async () => await respondFromString(x, req, env, ctx);
+  }
+
+  // Yes, we are returning an async function...
+  // eslint-disable-next-line @typescript-eslint/require-await
+  return async () =>
+    respondFromResponseInit(
+      {
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+      },
+      body
+    );
 }
 
-/**
- * Create a response with a string as a key to search from the KV database.
- *
- * - If `kvKey` doesn't exist, 404 will be returned.
- * - If metadata exist, the value will be returned along with the associated data.
- * - If the value can be parsed as a URL, it'll be returned with 302.
- * - If the value can be parsed as a JSON entry object, it'll be parsed and returned.
- * - If none of the above applies, the raw value will be returned.
- *
- * @param kvKey The key to KV database.
- * @param request The request received, working as a context.
- */
-async function respondWithKey(
-  kvKey: string,
-  request: Request
-): Promise<Response> {
-  const kvEntry = await kv.getWithMetadata(kvKey, "arrayBuffer");
+function getResponderFromKVResult(
+  kvResult: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>,
+  req: Request,
+  env: Environment,
+  ctx: ExecutionContext
+): Responder {
+  if (isDef(kvResult.metadata)) {
+    return getResponderFromUnknown(
+      kvResult.metadata,
+      isDef(kvResult.value) ? kvResult.value : undefined,
+      req,
+      env,
+      ctx
+    );
+  }
 
-  // The value could be non-existent.
-  if (!kvEntry.value) {
+  if (isUndef(kvResult.value)) {
+    // Yes, we are returning an async function...
+    // eslint-disable-next-line @typescript-eslint/require-await
+    return async () =>
+      respondFromResponseInit({
+        status: 404,
+      });
+  }
+
+  let entryFromKVValue: unknown = undefined;
+
+  try {
+    entryFromKVValue = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: false,
+    }).decode(kvResult.value);
+
+    entryFromKVValue = JSON.parse(<string>entryFromKVValue);
+  } catch {} // eslint-disable-line no-empty
+
+  return getResponderFromUnknown(
+    entryFromKVValue,
+    isUndef(entryFromKVValue) ? kvResult.value : undefined,
+    req,
+    env,
+    ctx
+  );
+}
+
+async function findResponder(
+  name: string,
+  req: Request,
+  env: Environment,
+  ctx: ExecutionContext
+): Promise<Responder | undefined> {
+  const entryFromConfig = entriesFromConfig[name];
+  if (isDef(entryFromConfig)) {
+    return getResponderFromUnknown(entryFromConfig, undefined, req, env, ctx);
+  }
+
+  const kvResult = await env?.kv?.getWithMetadata(name, "arrayBuffer");
+  if (isDef(kvResult) && (isDef(kvResult.metadata) || isDef(kvResult.value))) {
+    const responder = getResponderFromKVResult(kvResult, req, env, ctx);
+    if (isDef(responder)) {
+      return responder;
+    }
+  }
+
+  return undefined;
+}
+
+async function respond(
+  req: Request,
+  env: Environment,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const name = new URL(req.url).pathname;
+  const responder = await findResponder(name, req, env, ctx);
+
+  if (isUndef(responder)) {
     return new Response(null, {
       status: 404,
-      statusText: "Not Found",
     });
   }
 
-  // Metadata takes precedence.
-  if (kvEntry.metadata) {
-    const metadata = kvEntry.metadata as Metadata;
-    const predicate = metadata.if
-      ? evaluateExpression(metadata.if, request)
-      : true;
-
-    if (!predicate) {
-      return new Response(null, {
-        status: 403,
-        statusText: "Forbidden",
-      });
-    }
-
-    return new Response(kvEntry.value, {
-      status: metadata.status,
-      statusText: metadata.statusText,
-      headers: new Headers({
-        "content-type": metadata.contentType ?? "application/octet-stream",
-      }),
-    });
-  }
-
-  // Try to parse the value as text, preparing for further processing.
-  const textValue = new TextDecoder().decode(kvEntry.value);
-
-  // Try to parse the text value as a URL.
-  try {
-    return new Response(null, {
-      status: 302,
-      statusText: "Found",
-      headers: new Headers({
-        location: new URL(textValue).toString(),
-      }),
-    });
-  } catch {} // eslint-disable-line no-empty
-
-  // Try to parse the text value as a JSON entry object.
-  try {
-    return respondWithEntry(JSON.parse(textValue) as Entry, request);
-  } catch {} // eslint-disable-line no-empty
-
-  // Otherwise, we don't recognize the value. Returning it as a raw value.
-  return new Response(kvEntry.value, {
-    status: 200,
-    statusText: "OK",
-    headers: new Headers({
-      "content-type": "application/octet-stream",
-    }),
-  });
+  return responder(req, env, ctx);
 }
 
-/**
- * The Cloudflare "fetch" event listener handler.
- *
- * @param request The request received.
- */
-export async function handler(request: Request): Promise<Response> {
-  return respondWithKey(new URL(request.url).pathname, request);
-}
+export const fetchHandler = respond;

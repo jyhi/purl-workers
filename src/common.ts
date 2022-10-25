@@ -1,7 +1,7 @@
-/* A Persistent URL (PURL) service running on Cloudflare Workers
- * Copyright (C) 2021-2022 Junde Yhi <junde@yhi.moe>
+/* PURL-Workers: A Persistent URL (PURL) service running on Cloudflare Workers.
+ * Copyright (C) 2022 Junde Yhi <junde@yhi.moe>
  *
- * Expression evaluation.
+ * Commonly used utility functions.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,21 +19,23 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { Expression } from "./types";
-
-// WIP
-/* eslint-disable @typescript-eslint/no-unused-vars */
-
 /**
- * Evaluate `expr` to a boolean value.
- *
- * Work in progress.
+ * Type predicate to tell if a variable is `undefined` or `null`.
  */
-export function evaluateExpression(
-  expr: Expression,
-  request: Request
-): boolean {
-  return true;
+export function isUndef(x: unknown): x is undefined | null {
+  return x === undefined || x === null;
 }
 
-/* eslint-enable @typescript-eslint/no-unused-vars */
+/**
+ * Type predicate to tell if a variable is not `undefined` nor `null`.
+ */
+export function isDef<T>(x: T): x is NonNullable<T> {
+  return !isUndef(x);
+}
+
+/**
+ * Type predicate to tell if a variable is an _object_ (`{}`) or not.
+ */
+export function isObject(x: unknown): x is NonNullable<object> {
+  return isDef(x) && x.constructor === Object;
+}

@@ -1,36 +1,21 @@
 # Cloudflare Workers CLI (Wrangler) Configuration
 #
-# See https://developers.cloudflare.com/workers/cli-wrangler/configuration
-# for available options and their meanings. Not all possible options are shown
-# in this template!
+# See <https://developers.cloudflare.com/workers/wrangler/configuration/> for
+# available options and their meanings. Not all possible options are shown in
+# this template!
 #
 # SPDX-FileCopyrightText: 2021-2022 Junde Yhi <junde@yhi.moe>
 # SPDX-License-Identifier: CC0-1.0
 
-type = "javascript"
+main = "src/index.ts"
+compatibility_date = "2022-10-01"
+compatibility_flags = [ "url_standard" ]
+minify = true
+
+# You can change the name of worker.
 name = "purl-workers"
 
-# Opt into newest fixes and features
-compatibility_date = "2022-05-01"
-compatibility_flags = [ "url_standard" ]
-
-# Fill your account ID below
-account_id = ""
-
-# If deploying to the *.workers.dev domain, set this to true
-workers_dev = true
-
-# If deploying to a custom domain, fill the below as well
-# zone_id = ""
-# routes = []
-
-# Fill the KV database ID below; id and preview_id can be the same
-[[kv_namespaces]]
-binding = "kv" # Change the source code too if changing this
-id = ""
-preview_id = ""
-
-# Wrangler building configurations
-[build]
-command = "npm install && npm run build"
-upload = { format = "service-worker" }
+# If using Workers KV, fill its ID below.
+# kv_namespaces = [
+#   { binding = "kv", id = "" }
+# ]

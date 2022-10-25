@@ -1,4 +1,4 @@
-/* A Persistent URL (PURL) service running on Cloudflare Workers
+/* PURL-Workers: A Persistent URL (PURL) service running on Cloudflare Workers.
  * Copyright (C) 2021-2022 Junde Yhi <junde@yhi.moe>
  *
  * The entry point for Cloudflare Workers.
@@ -19,8 +19,11 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import { handler } from "./handler";
+import type { Environment } from "./types";
+import { fetchHandler } from "./handler";
 
-addEventListener("fetch", (event) => {
-  event.respondWith(handler(event.request));
-});
+const handlers: ExportedHandler<Environment> = {
+  fetch: fetchHandler,
+};
+
+export default handlers;

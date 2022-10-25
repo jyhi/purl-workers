@@ -1,196 +1,141 @@
-# PURL Service Running on Cloudflare Workers
+# [PURL]-Workers
 
-A [Persistent URL][purl] (or a URL shortening) service running on [Cloudflare Workers][cfwkrs], plus a few bells and whistles.
-
-[![Deploy with Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lmy441900/purl-workers)
+A serverless URL redirection service running on [Cloudflare Workers], with a few bells and whistles.
 
 ## Deploy
 
-Assuming [Cloudflare][cf] experience:
+You may:
 
-1. Go to Worker \> KV and create a KV database. It can be arbitrarily named.
-2. Install [Wrangler]. Log in with `wrangler login`.
-3. Configure a worker in `wrangler.toml` by filling the private options.
-4. `wrangler publish`.
+- [![Deploy with Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lmy441900/purl-workers)
+
+- Use [Wrangler]:
+
+  1. Complete `wrangler.toml` by adding appropriate options; see <https://developers.cloudflare.com/workers/wrangler/configuration/> for details.
+  2. `npm install && npm run deploy`.
+
+- Copy-paste:
+
+  1. Go to Cloudflare Dashboard \> Workers \> Overview, press the "Create a Service" button (the starter template doesn't matter), then configure any necessary options.
+  2. `npm install && npm run build`
+  3. Press the "Quick edit" button, copy the content of `build/purl-workers.bundle.js`, paste it to the editor, then press the "Save and Deploy" button.
 
 ## Use
 
-At present there's no direct support for updating the database; one needs to manually edit entries via either [Wrangler], the Web interface, or the API.
+PURL-workers uses the path name of the incoming URL to look for an entry, which describes how to respond to the request:
 
-Upon an incoming HTTP request, the URL path will be used as a key to find an entry in the associated Workers KV. The value can be:
-
-- An [entry object](#the-entry-object).
-- An URL; this will be returned in a `Location` header with HTTP `302 Found`.
-- Any arbitrary content; this will be returned with configurations from the associated [metadata object](#the-metadata-object).
-
-### Examples
-
-Using [Wrangler]:
-
-- To create a (temporal) redirection from `/foo`:
-
-```shell
-wrangler kv:key put --binding kv '/foo' 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+```
+http://www.example.com/foo/bar?q=baz&z#ch1
+                      ~~~~~~~~ path name
 ```
 
-- To create a permanent redirection instead:
+There are two ways to define entries:
 
-```shell
-wrangler kv:key put --binding kv \
-  '/foo' '{"status": 308, "location": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
+1. Fill the `entries` object in `purl-workers.config.js` (build-time configuration).
+2. Use Workers KV (run-time configuration).
+
+PURL-workers hasn't yet supported adding, editing, or removing entries; use [Wrangler] for these.
+
+### The `entries` Object
+
+The `entries` object is a dictionary (record) with strings as keys and the following "responders" recognized as values:
+
+1. A string shortcut.
+2. A [`ResponseInit`] object.
+3. A responder function.
+
+A string shortcut may be interpreted as a:
+
+- Temporary redirection
+- Permanent redirection
+- Alias
+- Raw value
+
+If a string is not a URL nor an alias, then it'll be returned directly. Note that aliases are resolved internally and recursvely. Be ware not to create a loop!
+
+A [`ResponseInit`] object will be directly supplied to the constructor of `Response`, creating the final response that the Workers platform can send. This is convenient for creating header-only responses without a body (which cannot be specified in this way).
+
+A responder function will be invoked with all the parameters available from the Workers platform (Module Worker syntax). This is almost identical to writing a `fetch` handler, so responder functions can do anything.
+
+Entries defined in this way will become a part of the code and cannot be mutated in runtime. See [The Configuration File](#the-configuration-file) for details.
+
+### Workers KV
+
+Each key corresponds to a value and a metadata, both of which can be set with [Wrangler].
+
+1. For a KV entry with metadata, the value will be returned directly (without any processing) based on what the metadata specified, regardless of the shape of value. The metadata may be a string shortcut or a `ResponseInit` object.
+2. For a KV entry without metadata, PURL-workers will first try parsing it as an entry (can be a string shortcut or a `ResponseInit` object in JSON). If parsing fails, then the value will be returned directly.
+
+## Entries
+
+### Temporary Redirect
+
+A temporary redirection tells the HTTP client to visit the URL in the `Location` header instead, but without remembering (caching) this redirection for future faster visits. Most often, this should be used.
+
+```
+https://www.example.com/redir/temp
 ```
 
-- To place a PDF file at `/test.pdf`, with the correct content type:
+### Permanent Redirect
 
-```shell
-wrangler kv:key put --binding kv \
-  --metadata '{"contentType": "application/pdf"}' \
-  --path '/test.pdf' path/to/pdf/file
+Prepend an exclamation mark (`!`) before the URL to create a permanent redirection instead, hinting HTTP clients to remember (cache) this redirection.
+
 ```
-
-## The Entry Object
-
-The entry object is represented in JSON, with the following shape:
-
-```json
-{
-  "is": "<key>",
-  "status": 204,
-  "statusText": "<reason phrase>",
-  "location": "http://www.example.com",
-  "auth": "Basic cHVybDp3b3JrZXI=",
-  "contentType": "application/x-example",
-  "contentBase64Decode": false,
-  "content": "Lorem ipsum dolor sit amet..."
-}
+!https://www.example.com/redir/perm
 ```
-
-Every field is optional. If `"is"` is present, it will be used to resolve [alias](#alias) regardless of other fields. Note that if a [metadata object](#the-metadata-object) is associated to the value, then it always takes precedence, creating a direct return, regardless of what is specified in the value.
 
 ### Alias
 
-`"is"` creates an alias from the current key to a specified key. For example, the following object creates an alias to `/foo`:
+Specify any string that can possibly be a key name. If a string cannot be parsed into a URL redirection or an object, then it is used as a key to find another entry to respond.
+
+```
+/redir/maybe
+```
+
+### [`ResponseInit`] Object
+
+The object will be used to create a `Response`.
 
 ```json
 {
-  "is": "/foo"
+  "status": 204,
+  "statusText": "No Content",
+  "headers": {
+    "Server": "PURL-workers/0"
+  }
 }
 ```
 
-Chained aliases are resolved recursively, until an entry object without `"is"` or a non-entry-object is found. It is therefore very easy to create an endless loop; pay attention not to create one!
+### Responder Function
 
-### Redirection
+In the `entries` object (see [above](#the-entries-object)), one can supply a Cloudflare Workers `fetch` handler function. This enables running any logic without losing the support of PURL-workers shortcuts (described above).
 
-Specify a 3xx (redirection) HTTP status code with `"status"` to create a redirection. For example, the following object creates a temporary redirection using `HTTP 307`:
-
-```json
+```javascript
 {
-  "status": 307,
-  "statusText": "Temporary Redirect",
-  "location": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  "/204": async () => {
+    return new Response({
+      status: 204
+    });
+  };
 }
 ```
 
-`"statusText"` and `"location"` are optional. However, returning a 3xx (redirection) status code without a `"location"` can confuse the client.
+## The Configuration File
 
-As a shortcut, for a simple `302 Found`, one can simply put the location (target) URL in the value; see [Examples](#examples).
+The configuration file defines two immutable variables as objects:
 
-### Direct Return
+- `entries`: a dictionary (record) of entries
+- `config`: build-time options tweaking the behavior of PURL-workers
 
-Use `"content"` to insert a payload into the response. Meanwhile, use a non-3xx (non-redirection) `"status"` to make the payload meaningful. As `"content"` can only be a text string, for binary payloads, a Base64-encoded string can be used along with `"contentBase64Decode"` set to `true`, telling purl-workers to first decode it. For example, the following object creates a HTTP 402 Payment Required response with a Base64-encoded plain-text payload:
+See [The `entries` Object](#the-entries-object) for configuring `entries`. The `config` object supports the following options:
 
-```json
-{
-  "status": 402,
-  "statusText": "Payment Required",
-  "contentType": "text/plain; charset=utf-8",
-  "contentBase64Decode": true,
-  "content": "TW9uZXkgbW9uZXkgbW9uZXkuLi4="
-}
-```
-
-As a shortcut, for a simple `200 OK` with an arbitrary payload, one can simply put the payload in binary into a value and make use of the metadata functionality of Workers KV; see [The Metadata Object](#the-metadata-object) for what can be put into the metadata object.
-
-### Authorization
-
-Use `"auth"` to make an entry private, requiring an `Authorization:` HTTP header to view. `"auth"` accepts either a string or an array of string. The strings should be the exact value of the HTTP `Authorization:` header. For example, a `Basic` authorization with user name `purl` and password `workers` would require:
-
-```json
-{
-  "auth": "Basic cHVybDp3b3JrZXJz"
-}
-```
-
-Multiple authorization options can be put into an array:
-
-```json
-{
-  "auth": [
-    "Basic cHVybDp3b3JrZXJz",
-    "Bearer 158ea011-a482-48e7-bb6e-8bb292717382"
-  ]
-}
-```
-
-This can also be put in [The Metadata Object](#the-metadata-object); see below.
-
-## The Metadata Object
-
-Metadata is a functionality offered by Workers KV, allowing an arbitrary JSON object be associated with a KV entry. The metadata object that purl-workers recognizes has the following shape:
-
-```json
-{
-  "status": 123,
-  "statusText": "<reason phrase>",
-  "contentType": "application/x-example",
-  "auth": "Basic cHVybDp3b3JrZXI="
-}
-```
-
-Every field is optional. An empty metadata object (`{}`) will result in the following default settings:
-
-```json
-{
-  "status": 200,
-  "statusText": "OK",
-  "contentType": "application/octet-stream"
-}
-```
-
-`"auth"` will be `undefined`, meaning no authorization. Most often, only `"contentType"` needs to be specified:
-
-```json
-{
-  "contentType": "image/jpeg"
-}
-```
-
-The association of metadata object is also optional. If a value _is not_ associated with a metadata object, purl-workers try parsing the value first. If a metadata object _is_ associated with a value, a direct return will always be created, regardless of what is specified inside.
-
-See [Examples](#examples) for how to upload a file with a metadata object associated.
-
-## Build
-
-[Wrangler] can automatically build the project:
-
-```shell
-wrangler build
-```
-
-To manually build this project:
-
-```shell
-npm install && npm run build
-```
-
-The compiled and bundled JavaScript file will be at `dist/bundle.js`.
+- `temporaryRedirect`: specify what status code should be used to indicate a temporary redirection; the default is 302.
+- `permanentRedirect`: specify what status code should be used to indicate a permanenet redirection; the default is 301.
 
 ## License
 
 This software is licensed under the GNU Affero General Public License; see [COPYING](COPYING) for details.
 
-[purl]: https://en.wikipedia.org/wiki/Persistent_uniform_resource_locator
-[cfwkrs]: https://workers.cloudflare.com/
-[cf]: https://www.cloudflare.com/
+[PURL]: https://en.wikipedia.org/wiki/Persistent_uniform_resource_locator
+[Cloudflare Workers]: https://workers.cloudflare.com/
 [Wrangler]: https://github.com/cloudflare/wrangler
-[Cargo]: https://doc.rust-lang.org/cargo/
+[`ResponseInit`]: https://developer.mozilla.org/en-US/docs/Web/API/Response/Response#options

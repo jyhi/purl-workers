@@ -5,10 +5,7 @@ module.exports = {
     tsConfigRootDir: __dirname,
     project: ["./tsconfig.json"],
   },
-  plugins: [
-    "@typescript-eslint",
-    "import",
-  ],
+  plugins: ["@typescript-eslint", "import"],
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
