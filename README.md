@@ -62,7 +62,7 @@ Entries defined in this way will become a part of the code and cannot be mutated
 
 Each key corresponds to a value and a metadata, both of which can be set with [Wrangler].
 
-1. For a KV entry with metadata, the value will be returned directly (without any processing) based on what the metadata specified, regardless of the shape of value. The metadata may be a string shortcut or a `ResponseInit` object.
+1. For a KV entry with metadata, the value will be returned directly (without any processing) based on what the metadata specified, regardless of the shape of value. The metadata must be a `ResponseInit` object[^1].
 2. For a KV entry without metadata, PURL-workers will first try parsing it as an entry (can be a string shortcut or a `ResponseInit` object in JSON). If parsing fails, then the value will be returned directly.
 
 ## Entries
@@ -139,3 +139,5 @@ This software is licensed under the GNU Affero General Public License; see [COPY
 [Cloudflare Workers]: https://workers.cloudflare.com/
 [Wrangler]: https://github.com/cloudflare/wrangler
 [`ResponseInit`]: https://developer.mozilla.org/en-US/docs/Web/API/Response/Response#options
+
+[^1]: https://developers.cloudflare.com/workers/runtime-apis/kv/#metadata
