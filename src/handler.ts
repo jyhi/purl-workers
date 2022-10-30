@@ -23,6 +23,16 @@ import { isDef, isObject, isUndef } from "./common";
 import { Environment, Responder } from "./types";
 import { config, entries as entriesFromConfig } from "../purl-workers.config";
 
+/**
+ * A {@link Responder} function accepting a {@link ResponseInit} object and
+ * return a {@link Response}.
+ *
+ * This function is automatically used upon an object in an entry.
+ *
+ * @param init The `{@link ResponseInit}` object.
+ * @param body A value that should be returned in the body as a payload.
+ * @returns A {@link Response}.
+ */
 function respondFromResponseInit(
   init: ResponseInit,
   body?: BodyInit | undefined | null
@@ -30,6 +40,18 @@ function respondFromResponseInit(
   return new Response(body, init);
 }
 
+/**
+ * A {@link Responder} function accepting a string and return a {@link Response}.
+ *
+ * This function is automatically used upon a string shortcut in an entry.
+ *
+ * @param str A string. The function tries to parse it and create a response
+ *            from it.
+ * @param req The incoming request.
+ * @param env The environment object containing worker bindings.
+ * @param ctx An object containing Workers platform related operations.
+ * @returns A promise of {@link Response}.
+ */
 async function respondFromString(
   str: string,
   req: Request,
@@ -70,6 +92,17 @@ async function respondFromString(
   });
 }
 
+/**
+ * Construct a {@link Responder} function from a value.
+ *
+ * @param x A value. The function type checks it and decide on how to wrap it
+ *          into a {@link Responder} function.
+ * @param body A value that should be returned in the body as a payload.
+ * @param req The incoming request.
+ * @param env The environment object containing worker bindings.
+ * @param ctx An object containing Workers platform related operations.
+ * @returns A {@link Responder} function.
+ */
 function getResponderFromUnknown(
   x: unknown,
   body: ArrayBuffer | undefined | null,
@@ -82,7 +115,7 @@ function getResponderFromUnknown(
   }
 
   if (isObject(x)) {
-    // Yes, we are returning an async function...
+    // respondFromResponseInit() is indeed synchronous, sorry.
     // eslint-disable-next-line @typescript-eslint/require-await
     return async () => respondFromResponseInit(x, body);
   }
@@ -91,7 +124,7 @@ function getResponderFromUnknown(
     return async () => await respondFromString(x, req, env, ctx);
   }
 
-  // Yes, we are returning an async function...
+  // respondFromResponseInit() is indeed synchronous, sorry.
   // eslint-disable-next-line @typescript-eslint/require-await
   return async () =>
     respondFromResponseInit(
@@ -104,6 +137,15 @@ function getResponderFromUnknown(
     );
 }
 
+/**
+ * Look for a responder from a KV entry (that has already been fetched).
+ *
+ * @param kvResult The result of getting from Workers KV.
+ * @param req The incoming request.
+ * @param env The environment object containing worker bindings.
+ * @param ctx An object containing Workers platform related operations.
+ * @returns A {@link Responder} function.
+ */
 function getResponderFromKVResult(
   kvResult: KVNamespaceGetWithMetadataResult<ArrayBuffer, unknown>,
   req: Request,
@@ -121,7 +163,7 @@ function getResponderFromKVResult(
   }
 
   if (isUndef(kvResult.value)) {
-    // Yes, we are returning an async function...
+    // respondFromResponseInit() is indeed synchronous, sorry.
     // eslint-disable-next-line @typescript-eslint/require-await
     return async () =>
       respondFromResponseInit({
@@ -131,12 +173,17 @@ function getResponderFromKVResult(
 
   let entryFromKVValue: unknown = undefined;
 
+  // The try block below tries to parse the value from KV as either text or
+  // object. In any case, they'll be handled by getResponderFromUnknown().
+
   try {
+    // First try decoding the value as text.
     entryFromKVValue = new TextDecoder("utf-8", {
       fatal: true,
       ignoreBOM: false,
     }).decode(kvResult.value);
 
+    // Then try parsing the text as an object in JSON.
     entryFromKVValue = JSON.parse(<string>entryFromKVValue);
   } catch {} // eslint-disable-line no-empty
 
@@ -149,17 +196,29 @@ function getResponderFromKVResult(
   );
 }
 
+/**
+ * Look for a responder.
+ *
+ * @param name The (key) name used to look for a responder.
+ * @param req The incoming request.
+ * @param env The environment object containing worker bindings.
+ * @param ctx An object containing Workers platform related operations.
+ * @returns A promise. If found, it's a {@link Responder} function. If not
+ *          found, it's `undefined`.
+ */
 async function findResponder(
   name: string,
   req: Request,
   env: Environment,
   ctx: ExecutionContext
 ): Promise<Responder | undefined> {
+  // Look for a responder from the configuration file.
   const entryFromConfig = entriesFromConfig[name];
   if (isDef(entryFromConfig)) {
     return getResponderFromUnknown(entryFromConfig, undefined, req, env, ctx);
   }
 
+  // Look for a responder from the Workers KV.
   const kvResult = await env?.kv?.getWithMetadata(name, "arrayBuffer");
   if (isDef(kvResult) && (isDef(kvResult.metadata) || isDef(kvResult.value))) {
     const responder = getResponderFromKVResult(kvResult, req, env, ctx);
@@ -168,9 +227,18 @@ async function findResponder(
     }
   }
 
+  // Nothing is found.
   return undefined;
 }
 
+/**
+ * The main responder function.
+ *
+ * @param req The incoming request.
+ * @param env The environment object containing worker bindings.
+ * @param ctx An object containing Workers platform related operations.
+ * @returns A promise of {@link Response}.
+ */
 async function respond(
   req: Request,
   env: Environment,
@@ -180,12 +248,19 @@ async function respond(
   const responder = await findResponder(name, req, env, ctx);
 
   if (isUndef(responder)) {
-    return new Response(null, {
-      status: 404,
-    });
+    return new Response(null, { status: 404 });
   }
 
   return responder(req, env, ctx);
 }
 
+/**
+ * The `fetch` handler for registering with Cloudflare Workers in the Module
+ * Workers syntax.
+ *
+ * It's just an alias of {@link respond}, because we also define a responder
+ * function to be in the exact shape of the `fetch` handler, and we don't want
+ * to call _the_ handler recursively (which looks like calling the `main`
+ * function recursively in C).
+ */
 export const fetchHandler = respond;
