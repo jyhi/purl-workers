@@ -1,81 +1,96 @@
-# [PURL]-Workers
+# _[PURL]-Workers_
 
-A serverless URL redirection service running on [Cloudflare Workers], with a few bells and whistles.
+A serverless [URL redirection] service running on [Cloudflare Workers], with a few bells and whistles.
 
 ## Deploy
 
 You may:
 
 - [![Deploy with Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lmy441900/purl-workers)
-
 - Use [Wrangler]:
-
-  1. Complete `wrangler.toml` by adding appropriate options; see <https://developers.cloudflare.com/workers/wrangler/configuration/> for details.
-  2. `npm install && npm run deploy`.
-
-- Copy-paste:
-
-  1. Go to Cloudflare Dashboard \> Workers \> Overview, press the "Create a Service" button (the starter template doesn't matter), then configure any necessary options.
-  2. `npm install && npm run build`
-  3. Press the "Quick edit" button, copy the content of `build/purl-workers.bundle.js`, paste it to the editor, then press the "Save and Deploy" button.
+    1. Ensure that you have Node.js installed.
+    2. Complete `wrangler.toml` by adding appropriate options; see <https://developers.cloudflare.com/workers/wrangler/configuration/> for how to do this.
+    3. Run `npm install` to install dependencies.
+    4. Run `npm run deploy` to compile, upload, and configure the worker on Cloudflare.
+- Copy \& Paste:
+    1. Ensure that you have Node.js installed.
+    2. Go to Cloudflare Dashboard \> Workers \> Overview, press the "Create a Service" button (the starter template doesn't matter), then configure any necessary options.
+    3. Run `npm install` to install dependencies.
+    4. Run `npm run build` to compile PURL-workers.
+    5. Press the "Quick edit" button, remove any residual content in the editor, copy the content of `dist/index.js`, paste it to the editor, then press the "Save and Deploy" button.
 
 ## Use
 
-PURL-workers uses the path name of the incoming URL to look for an entry, which describes how to respond to the request:
+PURL-workers uses the path name of the incoming URL to look for an [entry](#entry), which describes how to respond to the request:
 
 ```
 http://www.example.com/foo/bar?q=baz&z#ch1
                       ~~~~~~~~ path name
 ```
 
-There are two ways to define entries:
+Use [Wrangler] to add, edit, or remove [entries](#entry) in Workers KV. For example, to put the content of file `403.html` under the current working directory to key `/example/forbidden` that will be returned in a HTTP 403 Forbidden response:
 
-1. Fill the `entries` object in `purl-workers.config.js` (build-time configuration).
-2. Use Workers KV (run-time configuration).
+```sh
+npx wrangler kv:key put \
+  --binding kv --preview false \
+  --metadata '{"status":"403"}' \
+  --path ./403.html \
+  '/example/forbidden'
+```
 
-PURL-workers hasn't yet supported adding, editing, or removing entries; use [Wrangler] for these.
+To remove it:
 
-### The `entries` Object
+```sh
+npx wrangler kv:key delete \
+  --preview false \
+  '/example/forbidden'
+```
 
-The `entries` object is a dictionary (record) with strings as keys and the following "responders" recognized as values:
+Run `npx wrangler kv:key --help` for more information on how to use [Wrangler] to interact with a Workers KV.
+
+## Entry
+
+An entry is indexed by a string as key and can be:
 
 1. A string shortcut.
-2. A [`ResponseInit`] object.
-3. A responder function.
+2. [A `ResponseInit` object](#responseinit-object).
+3. [A responder function](#responder-function).
+4. A raw value.
 
-A string shortcut may be interpreted as a:
+A string shortcut may be further interpreted as a:
 
-- Temporary redirection
-- Permanent redirection
-- Alias
-- Raw value
+- [Temporary redirection](#temporary-redirection)
+- [Permanent redirection](#permanent-redirection)
+- [Alias](#alias)
+- Raw string
 
-If a string is not a URL nor an alias, then it'll be returned directly. Note that aliases are resolved internally and recursvely. Be ware not to create a loop!
+There are two ways to define entries:
 
-A [`ResponseInit`] object will be directly supplied to the constructor of `Response`, creating the final response that the Workers platform can send. This is convenient for creating header-only responses without a body (which cannot be specified in this way).
+1. _Build-time configuration:_ fill the `entries` object in `purl-workers.config.js`. Entries specified in this way:
+    - are much faster than those in Workers KV;
+    - take precedence (that is, if `/key` is defined in both places, then the one in the configuration file will be chosen);
 
-A responder function will be invoked with all the parameters available from the Workers platform (Module Worker syntax). This is almost identical to writing a `fetch` handler, so responder functions can do anything.
+    These entries will also be bundled together with PURL-worker during compile time; see [The Configuration File](#the-configuration-file) for more information.
 
-Entries defined in this way will become a part of the code and cannot be mutated in runtime. See [The Configuration File](#the-configuration-file) for details.
+2. _Run-time configuration:_ use Workers KV. Each key corresponds to a value and a metadata, both of which can be set with [Wrangler]:
+    - For a KV entry with metadata, the value will be returned directly (without any processing) based on what the metadata specified, regardless of the shape of value. The metadata must be a `ResponseInit` object[^1].
+    - For a KV entry without metadata, PURL-workers will first try parsing it as an entry (can be a string shortcut or a `ResponseInit` object in JSON). If parsing fails, then the value will be returned directly as a binary blob.
 
-### Workers KV
+    Entries specified in this way:
 
-Each key corresponds to a value and a metadata, both of which can be set with [Wrangler].
+    - can be raw (binary) and larger
+    - can have metadata attached
+    - can be added and removed without re-deploying the worker
 
-1. For a KV entry with metadata, the value will be returned directly (without any processing) based on what the metadata specified, regardless of the shape of value. The metadata must be a `ResponseInit` object[^1].
-2. For a KV entry without metadata, PURL-workers will first try parsing it as an entry (can be a string shortcut or a `ResponseInit` object in JSON). If parsing fails, then the value will be returned directly.
+### Temporary Redirection
 
-## Entries
-
-### Temporary Redirect
-
-A temporary redirection tells the HTTP client to visit the URL in the `Location` header instead, but without remembering (caching) this redirection for future faster visits. Most often, this should be used.
+A temporary redirection tells the HTTP client to visit the URL in the `Location` header, but without remembering (caching) this redirection. Most often, this is what you want.
 
 ```
 https://www.example.com/redir/temp
 ```
 
-### Permanent Redirect
+### Permanent Redirection
 
 Prepend an exclamation mark (`!`) before the URL to create a permanent redirection instead, hinting HTTP clients to remember (cache) this redirection.
 
@@ -83,59 +98,72 @@ Prepend an exclamation mark (`!`) before the URL to create a permanent redirecti
 !https://www.example.com/redir/perm
 ```
 
+### [`ResponseInit`] Object
+
+The object will be used to create a `Response` (as the `option` parameter of its constructor). This is convenient for creating header-only responses without a body.
+
+```json
+{
+  "status": 300,
+  "statusText": "Multiple Choice",
+  "headers": {
+    "Link": "</foo>; rel=alternate, </bar>; rel=alternate, </baz>; rel=alternate"
+  }
+}
+```
+
 ### Alias
 
 Specify any string that can possibly be a key name. If a string cannot be parsed into a URL redirection or an object, then it is used as a key to find another entry to respond.
 
 ```
-/redir/maybe
-```
-
-### [`ResponseInit`] Object
-
-The object will be used to create a `Response`.
-
-```json
-{
-  "status": 204,
-  "statusText": "No Content",
-  "headers": {
-    "Server": "PURL-workers/0"
-  }
-}
+/alias/maybe
 ```
 
 ### Responder Function
 
-In the `entries` object (see [above](#the-entries-object)), one can supply a Cloudflare Workers `fetch` handler function. This enables running any logic without losing the support of PURL-workers shortcuts (described above).
+A responder function is just a Cloudflare Workers `fetch` handler function. This enables running any logic without losing the support of PURL-workers shortcuts. It's obvious that a responder function can only be specified in [the configuration file](#the-configuration-file).
+
+See <https://developers.cloudflare.com/workers/runtime-apis/fetch-event/#syntax-module-worker> for the definition of a `fetch` handler function in the module worker syntax (which PURL-workers uses).
 
 ```javascript
 {
-  "/204": async () => {
-    return new Response({
-      status: 204
-    });
-  };
+  "/uwu": async (req, env) => {
+    const key = req.headers.get("API-Key");
+    if (key !== "Suki") {
+      return new Response("Kirai", { status: 406 });
+    }
+
+    const himitsu = await env.kv?.get("_senpai", "stream");
+    if (!himitsu) {
+      return new Response("Zannen", { status: 404 });
+    }
+
+    return new Response(himitsu);
+  }
 }
 ```
 
 ## The Configuration File
 
-The configuration file defines two immutable variables as objects:
+[`purl-workers.config.js`](purl-workers.config.js) is the configuration file (script, actually) for PURL-workers. It's a ECMAScript (JavaScript) module that is imported into the source code of PURL-workers, so code in the file will be bundled together with PURL-worker during compile time.
 
-- `entries`: a dictionary (record) of entries
-- `config`: build-time options tweaking the behavior of PURL-workers
+Two variables are expected from the file:
+
+- `entries`: an object of entries in key-value pairs.
+- `config`: an object of options.
 
 See [The `entries` Object](#the-entries-object) for configuring `entries`. The `config` object supports the following options:
 
-- `temporaryRedirect`: specify what status code should be used to indicate a temporary redirection; the default is 302.
-- `permanentRedirect`: specify what status code should be used to indicate a permanenet redirection; the default is 301.
+- `temporaryRedirect`: specify what status code should be used to indicate a temporary redirection. Optional. The default is `302`.
+- `permanentRedirect`: specify what status code should be used to indicate a permanenet redirection. Optional. The default is `301`.
 
 ## License
 
 This software is licensed under the GNU Affero General Public License; see [COPYING](COPYING) for details.
 
 [PURL]: https://en.wikipedia.org/wiki/Persistent_uniform_resource_locator
+[URL redirection]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections
 [Cloudflare Workers]: https://workers.cloudflare.com/
 [Wrangler]: https://github.com/cloudflare/wrangler
 [`ResponseInit`]: https://developer.mozilla.org/en-US/docs/Web/API/Response/Response#options
