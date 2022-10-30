@@ -60,10 +60,10 @@ async function respondFromString(
 ): Promise<Response> {
   try {
     const url = new URL(str);
-    return new Response(undefined, {
+    return new Response(null, {
       status: config.temporaryRedirect ?? 302,
       headers: {
-        location: url.toString(),
+        Location: url.toString(),
       },
     });
   } catch {} // eslint-disable-line no-empty
@@ -71,10 +71,10 @@ async function respondFromString(
   if (str[0] === "!") {
     try {
       const url = new URL(str.slice(1));
-      return new Response(undefined, {
+      return new Response(null, {
         status: config.permanentRedirect ?? 301,
         headers: {
-          location: url.toString(),
+          Location: url.toString(),
         },
       });
     } catch {} // eslint-disable-line no-empty
@@ -155,7 +155,7 @@ function getResponderFromKVResult(
   if (isDef(kvResult.metadata)) {
     return getResponderFromUnknown(
       kvResult.metadata,
-      isDef(kvResult.value) ? kvResult.value : undefined,
+      kvResult.value,
       req,
       env,
       ctx
@@ -219,7 +219,7 @@ async function findResponder(
   }
 
   // Look for a responder from the Workers KV.
-  const kvResult = await env?.kv?.getWithMetadata(name, "arrayBuffer");
+  const kvResult = await env.kv?.getWithMetadata(name, "arrayBuffer");
   if (isDef(kvResult) && (isDef(kvResult.metadata) || isDef(kvResult.value))) {
     const responder = getResponderFromKVResult(kvResult, req, env, ctx);
     if (isDef(responder)) {
