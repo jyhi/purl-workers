@@ -258,9 +258,9 @@ async function respond(
  * The `fetch` handler for registering with Cloudflare Workers in the Module
  * Workers syntax.
  *
- * It's just an alias of {@link respond}, because we also define a responder
- * function to be in the exact shape of the `fetch` handler, and we don't want
- * to call _the_ handler recursively (which looks like calling the `main`
- * function recursively in C).
+ * It's just an alias of `respond`, because we also define a responder function
+ * to be in the exact shape of the `fetch` handler, and we don't want to call
+ * _the_ handler recursively (which looks like calling the `main` function
+ * recursively in C).
  */
 export const fetchHandler = respond;
