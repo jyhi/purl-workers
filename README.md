@@ -1,5 +1,7 @@
 # _[PURL]-Workers_
 
+**This project has been deprecated.** Write your own serverless application instead.
+
 A serverless [URL redirection] service running on [Cloudflare Workers], with a few bells and whistles.
 
 ## Deploy
